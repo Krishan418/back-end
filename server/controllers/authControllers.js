@@ -1,6 +1,8 @@
 import User from '../models/user.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/generateToken.js';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import sendEmail from '../utils/email.js';
 
 
 // Register new user (always registers as 'customer')
@@ -227,4 +229,127 @@ export const refresh = async (req, res) => {
             message: 'Invalid or expired refresh token. Please login again.' 
         });
     }
-};
+};
+
+// Update user details (Me)
+export const updateMe = async (req, res) => {
+    try {
+        const { name, email, phone } = req.body;
+
+        const user = await User.findByIdAndUpdate(
+            req.user.id,
+            { name, email, phone },
+            { new: true, runValidators: true }
+        );
+
+        res.status(200).json({
+            success: true,
+            data: user
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Update password
+export const updatePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ success: false, message: 'Please provide current and new password' });
+        }
+
+        const user = await User.findById(req.user.id).select('+password');
+
+        if (!(await user.comparePassword(currentPassword))) {
+            return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+        }
+
+        user.password = newPassword;
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Password updated successfully'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Forgot Password
+export const forgotPassword = async (req, res) => {
+    try {
+        const user = await User.findOne({ email: req.body.email });
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'There is no user with that email address.' });
+        }
+
+        // Get reset token
+        const resetToken = user.getResetPasswordToken();
+
+        await user.save({ validateBeforeSave: false });
+
+        // Create reset URL
+        const resetUrl = `${req.protocol}://${req.get('host')}/api/auth/resetpassword/${resetToken}`;
+
+        const message = `Forgot your password? Submit a PATCH request with your new password and confirmPassword to: ${resetUrl}.\nIf you didn't forget your password, please ignore this email!`;
+
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: 'Your password reset token (valid for 10 min)',
+                message
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Token sent to email!'
+            });
+        } catch (err) {
+            user.resetPasswordToken = undefined;
+            user.resetPasswordExpire = undefined;
+            await user.save({ validateBeforeSave: false });
+
+            return res.status(500).json({ success: false, message: 'There was an error sending the email. Try again later!' });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Reset Password
+export const resetPassword = async (req, res) => {
+    try {
+        // Get hashed token
+        const resetPasswordToken = crypto
+            .createHash('sha256')
+            .update(req.params.resettoken)
+            .digest('hex');
+
+        const user = await User.findOne({
+            resetPasswordToken,
+            resetPasswordExpire: { $gt: Date.now() }
+        });
+
+        if (!user) {
+            return res.status(400).json({ success: false, message: 'Token is invalid or has expired' });
+        }
+
+        // Set new password
+        user.password = req.body.password;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpire = undefined;
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Password reset successful'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
