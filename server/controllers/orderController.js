@@ -1,5 +1,5 @@
 import Order from "../models/order.js";
-import MenuItem from "../models/menuitem.js"; 
+import MenuItem from "../models/MenuItem.js"; 
 
 // 1. CREATE ORDER (Inventory Logic Removed - Fully Independent)
 export const createOrder = async (req, res) => {

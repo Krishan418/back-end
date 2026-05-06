@@ -1,4 +1,4 @@
-import MenuItem from "../models/menuitem.js";
+import MenuItem from "../models/MenuItem.js";
 
 // 1. GET ALL ITEMS (Search, Filter, Pagination)
 export const getMenuItems = async (req, res) => {
@@ -57,7 +57,7 @@ export const createMenuItem = async (req, res) => {
 
     let image = "";
     if (req.file) {
-      image = req.file.path; 
+      image = req.file.path.replace(/\\/g, "/"); 
     } else if (req.body.image) {
       image = req.body.image; 
     }
@@ -80,7 +80,7 @@ export const updateMenuItem = async (req, res) => {
     }
 
     if (req.file) {
-      req.body.image = req.file.path;
+      req.body.image = req.file.path.replace(/\\/g, "/");
     }
 
     // runValidators: true added to ensure schema rules are checked on update
