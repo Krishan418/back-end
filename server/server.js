@@ -12,6 +12,10 @@ import weddingRoutes from "./routes/weddingRoutes.js";
 import menuRoutes from "./routes/menuRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
+import poolBookingRoutes from "./routes/poolBookingRoutes.js";
+import settingsRoutes from "./routes/settingsRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,11 +27,21 @@ dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
 const app = express();
 
+// Security & parsing
+app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
 // Serve static files from uploads directory
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// Rate limiting
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+    message: 'Too many requests from this IP, please try again after 15 minutes'
+});
+app.use('/api/auth', authLimiter);
 
 app.get("/", (req, res) => {
   res.send("Hotel Management Backend Running");
@@ -41,6 +55,17 @@ app.use("/api/wedding", weddingRoutes);
 app.use("/api/menu", menuRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/inventory", inventoryRoutes);
+app.use("/api/pool-bookings", poolBookingRoutes);
+app.use("/api/settings", settingsRoutes);
+
+// Global error handler
+app.use((err, req, res, next) => {
+    console.error('SERVER ERROR:', err.stack);
+    res.status(500).json({
+        success: false,
+        message: err.message || 'Internal Server Error'
+    });
+});
 
 const PORT = process.env.PORT || 5000;
 
