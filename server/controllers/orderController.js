@@ -1,7 +1,8 @@
 import Order from "../models/order.js";
 import MenuItem from "../models/MenuItem.js"; 
+import Inventory from "../models/inventory.js";
 
-// 1. CREATE ORDER (Inventory Logic Removed - Fully Independent)
+// 1. CREATE ORDER (With Inventory Integration)
 export const createOrder = async (req, res) => {
   try {
     const { 
@@ -12,12 +13,25 @@ export const createOrder = async (req, res) => {
     let subtotal = 0;
     const validatedItems = [];
 
-    // Use Promise.all to fetch all menu items in parallel for better performance
+    // Use Promise.all to fetch all menu items and handle inventory
     await Promise.all(items.map(async (item) => {
-      const realMenuItem = await MenuItem.findById(item.menuItemId).lean();
+      const realMenuItem = await MenuItem.findById(item.menuItemId);
       
       if (!realMenuItem) {
         throw new Error(`Menu item not found (ID: ${item.menuItemId})`);
+      }
+
+      // If menu item is linked to inventory, check and deduct stock
+      if (realMenuItem.inventoryItem) {
+        const inventory = await Inventory.findById(realMenuItem.inventoryItem);
+        if (inventory) {
+          if (inventory.quantity < item.quantity) {
+            throw new Error(`Insufficient stock for ${realMenuItem.name}. Available: ${inventory.quantity}`);
+          }
+          // Deduct stock
+          inventory.quantity -= item.quantity;
+          await inventory.save();
+        }
       }
 
       subtotal += realMenuItem.price * item.quantity;
@@ -40,7 +54,6 @@ export const createOrder = async (req, res) => {
 
     res.status(201).json(order);
   } catch (error) {
-    // 400 bad request logic for invalid items
     res.status(400).json({ message: error.message });
   }
 };
