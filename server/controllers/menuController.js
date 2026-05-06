@@ -1,29 +1,36 @@
 import MenuItem from "../models/MenuItem.js";
 
-// 1. GET ALL ITEMS (Search, Filter, Pagination)
+// 1. GET ALL ITEMS (Search, Filter, Pagination, Populate)
 export const getMenuItems = async (req, res) => {
   try {
-    const { category, search, page = 1, limit = 10 } = req.query;
+    const { category, search, page, limit, populate } = req.query;
     let query = {};
 
     if (category) query.category = category;
     if (search) query.name = { $regex: search, $options: "i" };
 
-    const skip = (page - 1) * limit;
+    // If no page/limit, return all (useful for dropdowns/simple lists)
+    if (!page && !limit) {
+      let q = MenuItem.find(query).sort({ name: 1 });
+      if (populate) q = q.populate(populate);
+      const items = await q.lean();
+      return res.status(200).json(items);
+    }
 
-    // .lean() added for faster reads (returns plain JS objects)
-    const items = await MenuItem.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit))
-      .lean();
+    const p = Number(page) || 1;
+    const l = Number(limit) || 10;
+    const skip = (p - 1) * l;
 
+    let q = MenuItem.find(query).sort({ createdAt: -1 }).skip(skip).limit(l);
+    if (populate) q = q.populate(populate);
+    
+    const items = await q.lean();
     const totalItems = await MenuItem.countDocuments(query);
 
     res.status(200).json({
       items,
-      totalPages: Math.ceil(totalItems / limit),
-      currentPage: Number(page),
+      totalPages: Math.ceil(totalItems / l),
+      currentPage: p,
       totalItems
     });
   } catch (error) {
@@ -46,7 +53,7 @@ export const getMenuItemById = async (req, res) => {
 // 3. CREATE ITEM
 export const createMenuItem = async (req, res) => {
   try {
-    const { name, category, price, isAvailable, description, inventoryId } = req.body;
+    const { name, category, price, isAvailable, description, inventoryItem, prepTime } = req.body;
 
     if (!name || !category || price == null) {
       return res.status(400).json({ message: "Name, category, and price are required" });
@@ -63,9 +70,15 @@ export const createMenuItem = async (req, res) => {
     }
 
     const item = await MenuItem.create({
-      name, category, price: Number(price), isAvailable, description, image, inventoryId
+      name,
+      category,
+      price: Number(price),
+      isAvailable: isAvailable === "true" || isAvailable === true,
+      description,
+      image,
+      inventoryItem: inventoryItem || null,
+      prepTime: Number(prepTime) || 15,
     });
-
     res.status(201).json(item);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -82,6 +95,11 @@ export const updateMenuItem = async (req, res) => {
     if (req.file) {
       req.body.image = req.file.path.replace(/\\/g, "/");
     }
+
+    // Handle inventoryItem mapping and numeric casting for updates
+    if (req.body.inventoryItem === "") req.body.inventoryItem = null;
+    if (req.body.price != null) req.body.price = Number(req.body.price);
+    if (req.body.prepTime != null) req.body.prepTime = Number(req.body.prepTime);
 
     // runValidators: true added to ensure schema rules are checked on update
     const item = await MenuItem.findByIdAndUpdate(req.params.id, req.body, { 
