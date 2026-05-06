@@ -83,6 +83,7 @@ export const createBooking = async (req, res) => {
         const booking = await WeddingBooking.create({
             eventDate: requestedDate,
             hallId,
+            customerId: req.user.id,
             packageType,
             guestCount,
             bookingStatus: 'pending'
@@ -271,5 +272,63 @@ export const getHallAvailability = async (req, res) => {
             success: false,
             message: error.message
         });
+    }
+};
+
+// Get current user's wedding bookings
+export const getMyBookings = async (req, res) => {
+    try {
+        const bookings = await WeddingBooking.find({ customerId: req.user.id })
+            .populate('hallId', 'hallName capacity');
+
+        res.status(200).json({
+            success: true,
+            data: bookings
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Admin: Get all halls
+export const getHalls = async (req, res) => {
+    try {
+        const halls = await WeddingHall.find();
+        res.status(200).json({
+            success: true,
+            data: halls
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Admin: Toggle hall status
+export const toggleHallStatus = async (req, res) => {
+    try {
+        const { status } = req.body;
+        const validStatuses = ['available', 'maintenance', 'occupied'];
+        
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({ success: false, message: 'Invalid status' });
+        }
+
+        const hall = await WeddingHall.findByIdAndUpdate(
+            req.params.id,
+            { status },
+            { new: true, runValidators: true }
+        );
+
+        if (!hall) {
+            return res.status(404).json({ success: false, message: 'Hall not found' });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `Hall status updated to ${status}`,
+            data: hall
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
 };
