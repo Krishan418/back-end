@@ -40,8 +40,12 @@ app.use("/api/settings", settingsRoutes);
 
 const PORT = process.env.PORT || 5000;
 
-// Connect to MongoDB
-await connectDB();
+// Connect to MongoDB, but keep the server alive if the database is unavailable.
+try {
+  await connectDB();
+} catch (error) {
+  console.warn("⚠️ Starting server without an active MongoDB connection.");
+}
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
