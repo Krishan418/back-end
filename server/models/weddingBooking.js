@@ -16,6 +16,11 @@ const weddingBookingSchema = new mongoose.Schema(
             ref: 'WeddingHall',
             required: [true, 'Hall ID is required']
         },
+        customerId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            required: [true, 'Customer ID is required']
+        },
 
         // Package selected by the customer.
         packageType: {

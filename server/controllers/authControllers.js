@@ -87,6 +87,14 @@ export const login = async (req, res) => {
             });
         }
 
+        // Check if user is active
+        if (user.status !== 'active') {
+            return res.status(403).json({
+                success: false,
+                message: 'Your account has been deactivated. Please contact support.'
+            });
+        }
+
         // Compare password
         const isPasswordMatch = await user.comparePassword(password);
         if (!isPasswordMatch) {
@@ -347,6 +355,35 @@ export const resetPassword = async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Password reset successful'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Deactivate user (Admin only)
+export const deactivateUser = async (req, res) => {
+    try {
+        const { status } = req.body; // 'active' or 'inactive'
+        
+        if (!['active', 'inactive'].includes(status)) {
+            return res.status(400).json({ success: false, message: 'Invalid status' });
+        }
+
+        const user = await User.findByIdAndUpdate(
+            req.params.id,
+            { status },
+            { new: true, runValidators: true }
+        );
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `User ${user.name} is now ${status}`,
+            data: user
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });

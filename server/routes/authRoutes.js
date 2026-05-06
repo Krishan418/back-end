@@ -9,7 +9,8 @@ import {
     updateMe,
     updatePassword,
     forgotPassword,
-    resetPassword
+    resetPassword,
+    deactivateUser
 } from '../controllers/authControllers.js';
 
 import { protect, authorize } from '../middleware/authMiddleware.js';
@@ -31,5 +32,6 @@ router.put('/updatepassword', protect, updatePassword);
 // Admin-only routes
 router.get('/users', protect, authorize('admin'), getAllUsers);
 router.put('/users/:id/role', protect, authorize('admin'), updateUserRole);
+router.put('/users/:id/status', protect, authorize('admin'), deactivateUser);
 
 export default router;

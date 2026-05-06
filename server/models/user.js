@@ -35,10 +35,23 @@ const userSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
+    address: {
+        type: String,
+        trim: true
+    },
+    emergencyContact: {
+        type: String,
+        trim: true
+    },
     role: {
         type: String,
         enum: ['customer', 'manager', 'admin', 'staff', 'receptionist', 'cashier'],
         default: 'customer'
+    },
+    status: {
+        type: String,
+        enum: ['active', 'inactive'],
+        default: 'active'
     },
     resetPasswordToken: String,
     resetPasswordExpire: Date,

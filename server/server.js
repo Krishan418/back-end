@@ -11,6 +11,7 @@ import menuRoutes from "./routes/menuRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 
 dotenv.config();
 
@@ -19,6 +20,8 @@ dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
 const app = express();
 
+// Security & parsing
+app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
@@ -42,6 +45,15 @@ app.use("/api/wedding", weddingRoutes);
 app.use("/api/menu", menuRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/inventory", inventoryRoutes);
+
+// Global error handler
+app.use((err, req, res, next) => {
+    console.error('SERVER ERROR:', err.stack);
+    res.status(500).json({
+        success: false,
+        message: err.message || 'Internal Server Error'
+    });
+});
 
 const PORT = process.env.PORT || 5000;
 
