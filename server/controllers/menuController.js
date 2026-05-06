@@ -1,4 +1,4 @@
-import MenuItem from "../models/menuitem.js";
+import MenuItem from "../models/MenuItem.js";
 
 // 1. GET ALL ITEMS (Search, Filter, Pagination)
 export const getMenuItems = async (req, res) => {
@@ -11,14 +11,16 @@ export const getMenuItems = async (req, res) => {
 
     const skip = (page - 1) * limit;
 
+    // .lean() added for faster reads (returns plain JS objects)
     const items = await MenuItem.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(Number(limit));
+      .limit(Number(limit))
+      .lean();
 
     const totalItems = await MenuItem.countDocuments(query);
 
-    res.json({
+    res.status(200).json({
       items,
       totalPages: Math.ceil(totalItems / limit),
       currentPage: Number(page),
@@ -32,9 +34,10 @@ export const getMenuItems = async (req, res) => {
 // 2. GET SINGLE ITEM
 export const getMenuItemById = async (req, res) => {
   try {
-    const item = await MenuItem.findById(req.params.id);
+    const item = await MenuItem.findById(req.params.id).lean();
     if (!item) return res.status(404).json({ message: "Menu item not found" });
-    res.json(item);
+    
+    res.status(200).json(item);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -43,7 +46,7 @@ export const getMenuItemById = async (req, res) => {
 // 3. CREATE ITEM
 export const createMenuItem = async (req, res) => {
   try {
-    const { name, category, price, isAvailable, description } = req.body;
+    const { name, category, price, isAvailable, description, inventoryId } = req.body;
 
     if (!name || !category || price == null) {
       return res.status(400).json({ message: "Name, category, and price are required" });
@@ -54,13 +57,13 @@ export const createMenuItem = async (req, res) => {
 
     let image = "";
     if (req.file) {
-      image = req.file.path; 
+      image = req.file.path.replace(/\\/g, "/"); 
     } else if (req.body.image) {
       image = req.body.image; 
     }
 
     const item = await MenuItem.create({
-      name, category, price: Number(price), isAvailable, description, image,
+      name, category, price: Number(price), isAvailable, description, image, inventoryId
     });
 
     res.status(201).json(item);
@@ -77,13 +80,17 @@ export const updateMenuItem = async (req, res) => {
     }
 
     if (req.file) {
-      req.body.image = req.file.path;
+      req.body.image = req.file.path.replace(/\\/g, "/");
     }
 
-    const item = await MenuItem.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!item) return res.status(404).json({ message: "Menu item not found" });
+    // runValidators: true added to ensure schema rules are checked on update
+    const item = await MenuItem.findByIdAndUpdate(req.params.id, req.body, { 
+      new: true, 
+      runValidators: true 
+    });
     
-    res.json(item);
+    if (!item) return res.status(404).json({ message: "Menu item not found" });
+    res.status(200).json(item);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -95,7 +102,7 @@ export const deleteMenuItem = async (req, res) => {
     const item = await MenuItem.findByIdAndDelete(req.params.id);
     if (!item) return res.status(404).json({ message: "Menu item not found" });
     
-    res.json({ message: "Menu item successfully deleted" });
+    res.status(200).json({ message: "Menu item successfully deleted" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
