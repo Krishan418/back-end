@@ -1,6 +1,8 @@
 import User from '../models/user.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/generateToken.js';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import sendEmail from '../utils/email.js';
 
 
 // Register new user (always registers as 'customer')
@@ -82,6 +84,14 @@ export const login = async (req, res) => {
             return res.status(401).json({ 
                 success: false,
                 message: 'Invalid email or password' 
+            });
+        }
+
+        // Check if user is active
+        if (user.status !== 'active') {
+            return res.status(403).json({
+                success: false,
+                message: 'Your account has been deactivated. Please contact support.'
             });
         }
 
@@ -227,4 +237,296 @@ export const refresh = async (req, res) => {
             message: 'Invalid or expired refresh token. Please login again.' 
         });
     }
-};
+};
+
+// Update user details (Me)
+export const updateMe = async (req, res) => {
+    try {
+        const { name, email, phone } = req.body;
+
+        const user = await User.findByIdAndUpdate(
+            req.user.id,
+            { name, email, phone },
+            { new: true, runValidators: true }
+        );
+
+        res.status(200).json({
+            success: true,
+            data: user
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Update password
+export const updatePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ success: false, message: 'Please provide current and new password' });
+        }
+
+        const user = await User.findById(req.user.id).select('+password');
+
+        if (!(await user.comparePassword(currentPassword))) {
+            return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+        }
+
+        user.password = newPassword;
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Password updated successfully'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Forgot Password
+export const forgotPassword = async (req, res) => {
+    try {
+        const user = await User.findOne({ email: req.body.email });
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'There is no user with that email address.' });
+        }
+
+        // Get reset token
+        const resetToken = user.getResetPasswordToken();
+
+        await user.save({ validateBeforeSave: false });
+
+        // Create reset URL
+        const resetUrl = `${req.protocol}://${req.get('host')}/api/auth/resetpassword/${resetToken}`;
+
+        const message = `Forgot your password? Submit a PATCH request with your new password and confirmPassword to: ${resetUrl}.\nIf you didn't forget your password, please ignore this email!`;
+
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: 'Your password reset token (valid for 10 min)',
+                message
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Token sent to email!'
+            });
+        } catch (err) {
+            user.resetPasswordToken = undefined;
+            user.resetPasswordExpire = undefined;
+            await user.save({ validateBeforeSave: false });
+
+            return res.status(500).json({ success: false, message: 'There was an error sending the email. Try again later!' });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Reset Password
+export const resetPassword = async (req, res) => {
+    try {
+        // Get hashed token
+        const resetPasswordToken = crypto
+            .createHash('sha256')
+            .update(req.params.resettoken)
+            .digest('hex');
+
+        const user = await User.findOne({
+            resetPasswordToken,
+            resetPasswordExpire: { $gt: Date.now() }
+        });
+
+        if (!user) {
+            return res.status(400).json({ success: false, message: 'Token is invalid or has expired' });
+        }
+
+        // Set new password
+        user.password = req.body.password;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpire = undefined;
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Password reset successful'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Deactivate user (Admin only)
+export const deactivateUser = async (req, res) => {
+    try {
+        const { status } = req.body; // 'active' or 'inactive'
+        
+        if (!['active', 'inactive'].includes(status)) {
+            return res.status(400).json({ success: false, message: 'Invalid status' });
+        }
+
+        const user = await User.findByIdAndUpdate(
+            req.params.id,
+            { status },
+            { new: true, runValidators: true }
+        );
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `User ${user.name} is now ${status}`,
+            data: user
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Create staff user (Admin only)
+export const createStaff = async (req, res) => {
+    try {
+        const { name, email, phone, role, department, salary, joinDate, status } = req.body;
+
+        if (!name || !email) {
+            return res.status(400).json({ success: false, message: 'Name and email are required' });
+        }
+
+        // Allow all staff roles (admin role cannot be assigned via this endpoint)
+        const allowedRoles = ['staff', 'manager', 'receptionist', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance'];
+        const assignedRole = (role || 'staff').toLowerCase();
+        if (!allowedRoles.includes(assignedRole)) {
+            return res.status(400).json({ success: false, message: 'Invalid role for this endpoint' });
+        }
+
+        const existing = await User.findOne({ email });
+        if (existing) return res.status(400).json({ success: false, message: 'User already exists' });
+
+        // Generate a temporary password for staff — admin should instruct staff to reset
+        const tempPassword = `Staff@${Math.random().toString(36).slice(2,8)}`;
+
+        const user = await User.create({
+            name,
+            email,
+            password: tempPassword,
+            confirmPassword: tempPassword,
+            phone,
+            role: assignedRole,
+            department,
+            salary,
+            joinDate,
+            status: status || 'active'
+        });
+
+        res.status(201).json({
+            success: true,
+            data: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                phone: user.phone,
+                department: user.department,
+                salary: user.salary,
+                joinDate: user.joinDate,
+                status: user.status
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Update user details (Admin only)
+export const updateUser = async (req, res) => {
+    try {
+        const allowed = ['name', 'phone', 'role', 'department', 'salary', 'joinDate', 'status', 'email'];
+        const updates = {};
+        for (const key of allowed) {
+            if (req.body[key] !== undefined) updates[key] = req.body[key];
+        }
+
+        const user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Prevent assigning admin role via this route
+        if (updates.role && updates.role === 'admin') {
+            return res.status(403).json({ success: false, message: 'Cannot assign admin role via this endpoint' });
+        }
+
+        Object.assign(user, updates);
+        await user.save({ validateBeforeSave: false });
+
+        res.status(200).json({ success: true, data: {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            phone: user.phone,
+            role: user.role,
+            department: user.department,
+            salary: user.salary,
+            joinDate: user.joinDate,
+            status: user.status
+        }});
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Delete user (Admin only)
+export const deleteUser = async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        if (user.role === 'admin') {
+            return res.status(403).json({ success: false, message: 'Cannot delete admin users' });
+        }
+
+        await User.findByIdAndDelete(req.params.id);
+
+        res.status(200).json({ success: true, message: 'User deleted' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Change Password
+export const changePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword, confirmPassword } = req.body;
+
+        if (!currentPassword || !newPassword || !confirmPassword) {
+            return res.status(400).json({ success: false, message: 'Please provide all fields' });
+        }
+
+        if (newPassword !== confirmPassword) {
+            return res.status(400).json({ success: false, message: 'New passwords do not match' });
+        }
+
+        // Find user by ID and include password
+        const user = await User.findById(req.user._id).select('+password');
+
+        // Check if current password matches
+        const isMatch = await user.comparePassword(currentPassword);
+        if (!isMatch) {
+            return res.status(401).json({ success: false, message: 'Incorrect current password' });
+        }
+
+        // Set new password
+        user.password = newPassword;
+        user.confirmPassword = confirmPassword;
+        await user.save();
+
+        res.status(200).json({ success: true, message: 'Password updated successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
