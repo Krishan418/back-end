@@ -23,6 +23,12 @@ const roomSchema = new mongoose.Schema(
 			min: [0, 'Available rooms cannot be negative'],
 			default: 0
 		},
+		totalRooms: {
+			type: Number,
+			required: [true, 'Total rooms count is required'],
+			min: [0, 'Total rooms cannot be negative'],
+			default: 1
+		},
 		occupancyText: {
 			type: String,
 			trim: true

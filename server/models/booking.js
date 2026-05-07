@@ -65,6 +65,24 @@ const bookingSchema = new mongoose.Schema(
 		decorationItems: {
 			type: [String],
 			default: []
+		},
+		checkInType: {
+			type: String,
+			enum: ['Day', 'Night'],
+			default: 'Day'
+		},
+		checkOutType: {
+			type: String,
+			enum: ['Day', 'Night'],
+			default: 'Night'
+		},
+		startIndex: {
+			type: Number,
+			required: true
+		},
+		endIndex: {
+			type: Number,
+			required: true
 		}
 	},
 	{
@@ -73,6 +91,7 @@ const bookingSchema = new mongoose.Schema(
 );
 
 bookingSchema.index({ email: 1, createdAt: -1 });
+bookingSchema.index({ room: 1, startIndex: 1, endIndex: 1 });
 bookingSchema.index({ room: 1, checkInDate: 1, checkOutDate: 1 });
 
 export default mongoose.model('Booking', bookingSchema);
