@@ -38,7 +38,7 @@ const ROOMS = [
   {
     name: 'Honeymoon Suite',
     description: 'A romantic escape with private pool, candlelit dining setup, rose petal turndown, and couples spa treatment.',
-    price: 15000,
+    price: 7500,
     availableRooms: 2,
     totalRooms: 2,
     defaultGuests: 2,
