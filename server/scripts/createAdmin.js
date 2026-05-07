@@ -25,11 +25,12 @@ const createAdmin = async () => {
 
         const existingAdmin = await User.findOne({ email: adminEmail });
         if (existingAdmin) {
-            console.log('Admin already exists. Resetting password to default...');
+            console.log('Admin already exists. Resetting password and ensuring verified status...');
             existingAdmin.password = adminPassword;
             existingAdmin.confirmPassword = adminPassword;
-            await existingAdmin.save();
-            console.log('Admin password reset successfully!');
+            existingAdmin.isVerified = true;
+            await existingAdmin.save({ validateBeforeSave: false });
+            console.log('Admin updated successfully!');
             process.exit(0);
         }
 
@@ -39,6 +40,8 @@ const createAdmin = async () => {
             email: adminEmail,
             password: adminPassword,
             confirmPassword: adminPassword,
+            isVerified: true,
+            role: 'admin'
             role: 'admin',
             phone: '0000000000'
         });

@@ -5,100 +5,90 @@ import WeddingBooking from '../models/weddingBooking.js';
 // Route: POST /api/wedding/bookings
 export const createBooking = async (req, res) => {
     try {
-        // Read required fields from request body.
-        const { eventDate, hallId, packageType, guestCount } = req.body;
+        const { 
+            eventDate, 
+            hallId, 
+            packageType, 
+            guestCount, 
+            startTime, 
+            endTime, 
+            eventType, 
+            optionalServices, 
+            specialRequests,
+            seatingStyle,
+            isAgreedToTerms 
+        } = req.body;
 
-        // Basic required-field validation.
-        if (!eventDate || !hallId || !packageType || !guestCount) {
-            return res.status(400).json({
-                success: false,
-                message: 'Please provide eventDate, hallId, packageType and guestCount'
-            });
+        // Validation
+        if (!eventDate || !hallId || !packageType || !guestCount || !startTime || !endTime || !eventType || isAgreedToTerms === undefined) {
+            return res.status(400).json({ success: false, message: 'Please provide all required fields' });
         }
 
-        // Parse and validate date.
-        const requestedDate = new Date(eventDate);
-        if (Number.isNaN(requestedDate.getTime())) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid eventDate format. Use YYYY-MM-DD'
-            });
-        }
-
-        // Guest count should be a positive number.
-        if (Number(guestCount) < 1) {
-            return res.status(400).json({
-                success: false,
-                message: 'guestCount must be at least 1'
-            });
-        }
-
-        // Check whether hall exists.
+        // 1. Hall Check
         const hall = await WeddingHall.findById(hallId);
-        if (!hall) {
-            return res.status(404).json({
-                success: false,
-                message: 'Wedding hall not found'
-            });
-        }
+        if (!hall) return res.status(404).json({ success: false, message: 'Hall not found' });
+        if (hall.status !== 'available') return res.status(400).json({ success: false, message: 'Hall is unavailable' });
+        if (Number(guestCount) > hall.capacity) return res.status(400).json({ success: false, message: `Guest count exceeds capacity (${hall.capacity})` });
 
-        // Hall must be operational for booking.
-        if (hall.status !== 'available') {
-            return res.status(400).json({
-                success: false,
-                message: `Hall is currently ${hall.status} and cannot be booked`
-            });
-        }
+        // 2. Availability Check
+        const requestedDate = new Date(eventDate);
+        const startOfDay = new Date(requestedDate).setHours(0, 0, 0, 0);
+        const endOfDay = new Date(requestedDate).setHours(23, 59, 59, 999);
 
-        // Booking cannot exceed hall capacity.
-        if (Number(guestCount) > hall.capacity) {
-            return res.status(400).json({
-                success: false,
-                message: `Guest count exceeds hall capacity (${hall.capacity})`
-            });
-        }
-
-        // Build date boundaries for same-day conflict check.
-        const startOfDay = new Date(requestedDate);
-        startOfDay.setHours(0, 0, 0, 0);
-
-        const endOfDay = new Date(requestedDate);
-        endOfDay.setHours(23, 59, 59, 999);
-
-        // Check if this hall already has a blocking booking on that day.
         const existingBooking = await WeddingBooking.findOne({
             hallId,
             eventDate: { $gte: startOfDay, $lte: endOfDay },
             bookingStatus: { $in: ['pending', 'confirmed'] }
         });
 
-        if (existingBooking) {
-            return res.status(409).json({
-                success: false,
-                message: 'This hall is already booked for the selected date'
+        if (existingBooking) return res.status(409).json({ success: false, message: 'Hall already booked for this date' });
+
+        // 3. Price Calculation Logic
+        const packagePrices = { Silver: 30, Gold: 50, Platinum: 80 };
+        const servicePrices = {
+            'Decorations': 500, 'DJ/Music': 300, 'Photography': 600, 
+            'Videography': 700, 'Wedding Cake': 200, 'Lighting System': 250, 'Flower Arrangements': 400
+        };
+
+        const hallFee = hall.price;
+        const cateringTotal = packagePrices[packageType] * Number(guestCount);
+        
+        let servicesTotal = 0;
+        if (optionalServices && Array.isArray(optionalServices)) {
+            optionalServices.forEach(service => {
+                servicesTotal += (servicePrices[service] || 0);
             });
         }
 
-        // Create booking with default status = pending.
+        const totalAmount = hallFee + cateringTotal + servicesTotal;
+        const depositAmount = totalAmount * 0.2; // 20% Deposit
+
+        // 4. Create Booking
         const booking = await WeddingBooking.create({
             eventDate: requestedDate,
+            startTime,
+            endTime,
+            eventType,
             hallId,
             customerId: req.user.id,
             packageType,
             guestCount,
+            optionalServices,
+            specialRequests,
+            seatingStyle,
+            totalAmount,
+            depositAmount,
+            isAgreedToTerms,
             bookingStatus: 'pending'
         });
 
-        return res.status(201).json({
+        res.status(201).json({
             success: true,
             message: 'Booking request created successfully',
             data: booking
         });
     } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: error.message
-        });
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 
@@ -336,29 +326,21 @@ export const toggleHallStatus = async (req, res) => {
 // Public: Get monthly booked dates for the calendar
 export const getMonthlyBookedDates = async (req, res) => {
     try {
-        const { year, month } = req.query; // format: 2026, 5
-        
-        if (!year || !month) {
-             return res.status(400).json({ success: false, message: 'Please provide year and month query parameters' });
-        }
+        const { year, month } = req.query;
+        if (!year || !month) return res.status(400).json({ success: false, message: 'Please provide year and month' });
 
-        // JS Date month is 0-indexed
         const startDate = new Date(year, month - 1, 1);
-        const endDate = new Date(year, month, 0, 23, 59, 59, 999); // last day of the month
+        const endDate = new Date(year, month, 0, 23, 59, 59, 999);
 
-        // Find all bookings in this month that are pending or confirmed
         const bookings = await WeddingBooking.find({
             eventDate: { $gte: startDate, $lte: endDate },
             bookingStatus: { $in: ['pending', 'confirmed'] }
         }).select('eventDate hallId');
 
-        // Group by date
         const dateMap = {};
         bookings.forEach(booking => {
             const dateStr = booking.eventDate.toISOString().split('T')[0];
-            if (!dateMap[dateStr]) {
-                dateMap[dateStr] = new Set();
-            }
+            if (!dateMap[dateStr]) dateMap[dateStr] = new Set();
             dateMap[dateStr].add(booking.hallId.toString());
         });
 
@@ -367,11 +349,78 @@ export const getMonthlyBookedDates = async (req, res) => {
             bookedVenuesCount: dateMap[date].size
         }));
 
+        res.status(200).json({ success: true, data: bookedDates });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Admin: Get all wedding bookings with filters
+export const getAllWeddingBookings = async (req, res) => {
+    try {
+        const { status, search } = req.query;
+        let query = {};
+        
+        if (status && status !== 'All') {
+            query.bookingStatus = status.toLowerCase();
+        }
+
+        const bookings = await WeddingBooking.find(query)
+            .populate('hallId', 'hallName capacity price')
+            .populate('customerId', 'name email phone')
+            .sort({ eventDate: -1 });
+
+        // Filter by customer name/email if search is provided
+        let filtered = bookings;
+        if (search) {
+            const searchLower = search.toLowerCase();
+            filtered = bookings.filter(b => 
+                (b.customerId?.name?.toLowerCase().includes(searchLower)) ||
+                (b.customerId?.email?.toLowerCase().includes(searchLower))
+            );
+        }
+
         res.status(200).json({
             success: true,
-            data: bookedDates
+            count: filtered.length,
+            data: filtered
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
+};
+
+// Admin: Get Dashboard Stats
+export const getWeddingDashboardStats = async (req, res) => {
+    try {
+        const totalBookings = await WeddingBooking.countDocuments();
+        const confirmedEvents = await WeddingBooking.countDocuments({ bookingStatus: 'confirmed' });
+        
+        const bookings = await WeddingBooking.find({ bookingStatus: 'confirmed' });
+        const totalRevenue = bookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                totalBookings,
+                confirmedEvents,
+                totalRevenue
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export default {
+    createBooking,
+    updateBookingStatus,
+    deleteBookingRequest,
+    getHallAvailability,
+    getMyBookings,
+    getHalls,
+    toggleHallStatus,
+    getMonthlyBookedDates,
+    getAllWeddingBookings,
+    getWeddingDashboardStats
 };

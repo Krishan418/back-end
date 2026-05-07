@@ -6,7 +6,8 @@ export const connectDB = async () => {
   try {
     console.log("🔄 Attempting to connect to MongoDB...");
     const conn = await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 10000,
+      serverSelectionTimeoutMS: 30000, // 30 seconds
+      socketTimeoutMS: 45000, // 45 seconds
     });
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
     return conn;

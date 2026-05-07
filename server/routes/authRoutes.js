@@ -16,7 +16,9 @@ import {
     deleteUser,
     changePassword,
     verifyEmail,
-    resendOTP
+    resendOTP,
+    requestEmailChange,
+    verifyEmailChange
 } from '../controllers/authControllers.js';
 
 import { protect, authorize } from '../middleware/authMiddleware.js';
@@ -37,6 +39,8 @@ router.get('/me', protect, getMe);
 router.put('/updateme', protect, updateMe);
 router.put('/updatepassword', protect, updatePassword);
 router.put('/change-password', protect, changePassword);
+router.post('/request-email-change', protect, requestEmailChange);
+router.post('/verify-email-change', protect, verifyEmailChange);
 
 // Admin-only routes
 router.get('/users', protect, authorize('admin'), getAllUsers);

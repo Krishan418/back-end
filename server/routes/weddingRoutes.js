@@ -7,7 +7,9 @@ import {
     updateBookingStatus,
     getHalls,
     toggleHallStatus,
-    getMyBookings
+    getMyBookings,
+    getAllWeddingBookings,
+    getWeddingDashboardStats
 } from '../controllers/weddingControllers.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
@@ -22,6 +24,8 @@ router.post('/bookings', protect, createBooking);
 router.get('/my-bookings', protect, getMyBookings);
 
 // Admin/Staff routes
+router.get('/all-bookings', protect, authorize('admin', 'receptionist'), getAllWeddingBookings);
+router.get('/dashboard-stats', protect, authorize('admin', 'receptionist'), getWeddingDashboardStats);
 router.get('/halls', protect, authorize('admin', 'receptionist'), getHalls);
 router.put('/halls/:id/status', protect, authorize('admin'), toggleHallStatus);
 router.put('/bookings/:id/status', protect, authorize('admin', 'receptionist'), updateBookingStatus);
