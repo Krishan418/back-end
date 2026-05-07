@@ -35,3 +35,7 @@ dist/
 
 # Misc
 *.tgz
+
+# Uploads
+uploads/*
+!uploads/.gitkeep

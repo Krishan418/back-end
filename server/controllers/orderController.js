@@ -7,7 +7,8 @@ export const createOrder = async (req, res) => {
   try {
     const { 
       orderType, items, discount = 0, tableNumber, 
-      roomNumber, deliveryAddress, contactNumber 
+      roomNumber, deliveryAddress, contactNumber, coordinates,
+      customerName, customerUser
     } = req.body;
 
     let subtotal = 0;
@@ -47,9 +48,18 @@ export const createOrder = async (req, res) => {
     const tax = subtotal * 0.1; // 10% tax
     const totalAmount = Number((subtotal + tax - discount).toFixed(2));
 
+    // generate a readable order number if not provided
+    const orderNumber = req.body.orderNumber || `POS-${Date.now().toString().slice(-6)}`;
+
     const order = await Order.create({
       orderType, tableNumber, roomNumber, deliveryAddress, 
-      contactNumber, items: validatedItems, subtotal, tax, discount, totalAmount,
+      contactNumber, coordinates, customerName, customerUser,
+      items: validatedItems, subtotal, tax, discount, totalAmount,
+      paymentStatus: req.body.paymentStatus || 'Unpaid',
+      paymentMethod: req.body.paymentMethod || 'Other',
+      amountReceived: req.body.amountReceived || 0,
+      balance: req.body.balance || 0,
+      orderNumber,
     });
 
     res.status(201).json(order);
@@ -58,22 +68,29 @@ export const createOrder = async (req, res) => {
   }
 };
 
-// 2. GET ALL ORDERS
+// 2. GET ORDERS (Filtered by Role)
 export const getOrders = async (req, res) => {
   try {
-    const orders = await Order.find().sort({ createdAt: -1 }).lean();
+    let query = {};
+    
+    // If not admin/manager/cashier, only show their own orders
+    if (req.user && !['admin', 'manager', 'cashier', 'reception', 'receptionist'].includes(req.user.role)) {
+      query.customerUser = req.user._id;
+    }
+
+    const orders = await Order.find(query).sort({ createdAt: -1 }).lean();
     res.status(200).json(orders);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// 3. UPDATE ORDER STATUS
+// 3. UPDATE ORDER (Flexible)
 export const updateOrderStatus = async (req, res) => {
   try {
     const order = await Order.findByIdAndUpdate(
       req.params.id,
-      { orderStatus: req.body.orderStatus },
+      { $set: req.body },
       { new: true, runValidators: true }
     );
     if (!order) return res.status(404).json({ message: "Order not found" });
@@ -112,6 +129,46 @@ export const getOrderTrends = async (req, res) => {
       { $limit: 10 }
     ]);
     res.status(200).json(trends);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// 6. GET ORDERS SUMMARY (for POS dashboard)
+export const getOrdersSummary = async (req, res) => {
+  try {
+    // Only include orders visible to the user (reuse logic from getOrders)
+    let query = {};
+    if (req.user && !['admin', 'manager', 'cashier', 'reception', 'receptionist'].includes(req.user.role)) {
+      query.customerUser = req.user._id;
+    }
+
+    const orders = await Order.find(query).lean();
+
+    const totalSales = orders.reduce((s, o) => s + (o.totalAmount || 0), 0);
+    const completed = orders.filter(o => (o.orderStatus || '').toLowerCase() === 'completed').length;
+    const pending = orders.filter(o => (o.orderStatus || '').toLowerCase() === 'pending').length;
+    const cancelled = orders.filter(o => (o.orderStatus || '').toLowerCase() === 'cancelled').length;
+
+    const paymentMap = {};
+    orders.forEach(o => {
+      const m = o.paymentMethod || 'Other';
+      paymentMap[m] = (paymentMap[m] || 0) + (o.totalAmount || 0);
+    });
+
+    const paymentBreakdown = Object.keys(paymentMap).map(k => ({ method: k, amount: paymentMap[k] }));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalSales,
+        completed,
+        pending,
+        cancelled,
+        paymentBreakdown,
+        recent: orders.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)).slice(0,8)
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
