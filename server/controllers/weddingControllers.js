@@ -273,3 +273,24 @@ export const getHallAvailability = async (req, res) => {
         });
     }
 };
+
+// STEP 5 API: Get all wedding bookings.
+// Route: GET /api/wedding/bookings
+export const getAllBookings = async (req, res) => {
+    try {
+        const bookings = await WeddingBooking.find()
+            .populate('hallId', 'hallName capacity price status')
+            .sort({ eventDate: 1 });
+
+        return res.status(200).json({
+            success: true,
+            count: bookings.length,
+            data: bookings
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
