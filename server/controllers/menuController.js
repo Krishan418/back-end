@@ -100,6 +100,9 @@ export const updateMenuItem = async (req, res) => {
     if (req.body.inventoryItem === "") req.body.inventoryItem = null;
     if (req.body.price != null) req.body.price = Number(req.body.price);
     if (req.body.prepTime != null) req.body.prepTime = Number(req.body.prepTime);
+    if (req.body.isAvailable !== undefined) {
+      req.body.isAvailable = req.body.isAvailable === 'true' || req.body.isAvailable === true;
+    }
 
     // runValidators: true added to ensure schema rules are checked on update
     const item = await MenuItem.findByIdAndUpdate(req.params.id, req.body, { 

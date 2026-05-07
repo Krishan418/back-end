@@ -28,7 +28,9 @@ dns.setServers(["8.8.8.8", "8.8.4.4"]);
 const app = express();
 
 // Security & parsing
-app.use(helmet());
+app.use(helmet({
+    crossOriginResourcePolicy: false,
+}));
 app.use(cors());
 app.use(express.json());
 
