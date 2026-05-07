@@ -9,10 +9,10 @@ const poolBookingSchema = new mongoose.Schema(
         },
         guestEmail: {
             type: String,
-            required: [true, 'Guest email is required'],
             lowercase: true,
             trim: true,
-            match: /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,})+$/
+            default: '',
+            match: [/^$|^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please provide a valid email if specified']
         },
         roomNumber: {
             type: String,
@@ -26,6 +26,16 @@ const poolBookingSchema = new mongoose.Schema(
         timeSlot: {
             type: String,
             required: [true, 'Time slot is required'],
+            trim: true
+        },
+        checkInTime: {
+            type: String,
+            required: [true, 'Check-in time is required'],
+            trim: true
+        },
+        checkOutTime: {
+            type: String,
+            required: [true, 'Check-out time is required'],
             trim: true
         },
         numberOfGuests: {

@@ -12,6 +12,30 @@ const parsePrice = (value) => {
     return Number.isFinite(price) && price >= 0 ? price : null;
 };
 
+const calculatePricePerPerson = (checkInTime, checkOutTime) => {
+    try {
+        const [inHour, inMin] = checkInTime.split(':').map(Number);
+        const [outHour, outMin] = checkOutTime.split(':').map(Number);
+        
+        const inTotalMinutes = inHour * 60 + inMin;
+        const outTotalMinutes = outHour * 60 + outMin;
+        
+        let durationMinutes = outTotalMinutes - inTotalMinutes;
+        if (durationMinutes <= 0) durationMinutes += 24 * 60; // Next day
+        
+        const durationHours = durationMinutes / 60;
+        
+        // Rs. 500 for first 2 hours, Rs. 200 for each additional hour
+        if (durationHours <= 2) {
+            return 500;
+        }
+        const additionalHours = Math.ceil(durationHours - 2);
+        return 500 + (additionalHours * 200);
+    } catch (e) {
+        return null;
+    }
+};
+
 export const createPoolBooking = async (req, res) => {
     try {
         const {
@@ -20,16 +44,34 @@ export const createPoolBooking = async (req, res) => {
             roomNumber = '',
             date,
             timeSlot,
+            checkInTime,
+            checkOutTime,
             numberOfGuests,
-            status = 'Confirmed',
-            pricePerPerson
+            status = 'Confirmed'
         } = req.body || {};
 
-        if (!guestName || !guestEmail || !date || !timeSlot) {
+        if (!guestName || !date || !timeSlot || !checkInTime || !checkOutTime) {
             return res.status(400).json({
                 success: false,
-                message: 'guestName, guestEmail, date, and timeSlot are required.'
+                message: 'guestName, date, timeSlot, checkInTime, and checkOutTime are required.'
             });
+        }
+
+        // Validate email format if provided
+        if (guestEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please provide a valid email format.'
+            });
+        }
+
+        // Disallow booking dates in the past (compare dates at midnight)
+        const bookingDate = new Date(date);
+        bookingDate.setHours(0, 0, 0, 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (isNaN(bookingDate.getTime()) || bookingDate < today) {
+            return res.status(400).json({ success: false, message: 'Booking date cannot be in the past.' });
         }
 
         const guests = parseGuestCount(numberOfGuests);
@@ -40,16 +82,28 @@ export const createPoolBooking = async (req, res) => {
             });
         }
 
-        const perPersonPrice = parsePrice(pricePerPerson);
-        if (perPersonPrice === null) {
+        // Calculate price per person based on duration
+        // Validate times are in allowed window
+        if (!isTimeInAllowedWindow(checkInTime) || !isTimeInAllowedWindow(checkOutTime)) {
+            return res.status(400).json({ success: false, message: 'Times must be between 08:00 and 19:00' });
+        }
+
+        const startMin = timeToMinutes(checkInTime);
+        const endMin = timeToMinutes(checkOutTime);
+        if (endMin <= startMin) {
+            return res.status(400).json({ success: false, message: 'Check-out must be after check-in' });
+        }
+
+        const pricePerPerson = calculatePricePerPerson(checkInTime, checkOutTime);
+        if (pricePerPerson === null) {
             return res.status(400).json({
                 success: false,
-                message: 'pricePerPerson must be a valid number.'
+                message: 'Invalid check-in or check-out time format. Use HH:mm format.'
             });
         }
 
         const normalizedStatus = allowedStatuses.has(status) ? status : 'Confirmed';
-        const totalAmount = Number((perPersonPrice * guests).toFixed(2));
+        const totalAmount = Number((pricePerPerson * guests).toFixed(2));
 
         const booking = await PoolBooking.create({
             guestName,
@@ -57,9 +111,11 @@ export const createPoolBooking = async (req, res) => {
             roomNumber,
             date,
             timeSlot,
+            checkInTime,
+            checkOutTime,
             numberOfGuests: guests,
             status: normalizedStatus,
-            pricePerPerson: perPersonPrice,
+            pricePerPerson: pricePerPerson,
             totalAmount
         });
 
@@ -100,16 +156,17 @@ export const updatePoolBooking = async (req, res) => {
             roomNumber = '',
             date,
             timeSlot,
+            checkInTime,
+            checkOutTime,
             numberOfGuests,
-            status,
-            pricePerPerson
+            status
         } = req.body || {};
 
         if (!id) {
             return res.status(400).json({ success: false, message: 'Booking ID is required' });
         }
 
-        const updateData = { guestName, guestEmail, roomNumber, date, timeSlot };
+        const updateData = { guestName, guestEmail, roomNumber, timeSlot };
         
         if (numberOfGuests !== undefined) {
             const guests = parseGuestCount(numberOfGuests);
@@ -117,14 +174,53 @@ export const updatePoolBooking = async (req, res) => {
             updateData.numberOfGuests = guests;
         }
 
-        if (pricePerPerson !== undefined) {
-            const perPersonPrice = parsePrice(pricePerPerson);
-            if (perPersonPrice === null) return res.status(400).json({ success: false, message: 'pricePerPerson must be a valid number.' });
-            updateData.pricePerPerson = perPersonPrice;
-        }
-
         if (status !== undefined) {
             updateData.status = allowedStatuses.has(status) ? status : 'Confirmed';
+        }
+
+        if (date !== undefined) {
+            // Validate date is not in the past
+            const bookingDate = new Date(date);
+            bookingDate.setHours(0, 0, 0, 0);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (isNaN(bookingDate.getTime()) || bookingDate < today) {
+                return res.status(400).json({ success: false, message: 'Booking date cannot be in the past.' });
+            }
+            updateData.date = date;
+        }
+
+        if (checkInTime !== undefined || checkOutTime !== undefined) {
+            const bookingToCheck = await PoolBooking.findById(id);
+            if (!bookingToCheck) {
+                return res.status(404).json({ success: false, message: 'Booking not found' });
+            }
+
+            const finalCheckIn = checkInTime ?? bookingToCheck.checkInTime;
+            const finalCheckOut = checkOutTime ?? bookingToCheck.checkOutTime;
+
+            // Validate allowed window
+            if (!isTimeInAllowedWindow(finalCheckIn) || !isTimeInAllowedWindow(finalCheckOut)) {
+                return res.status(400).json({ success: false, message: 'Times must be between 08:00 and 19:00' });
+            }
+
+            const startMin = timeToMinutes(finalCheckIn);
+            const endMin = timeToMinutes(finalCheckOut);
+            if (endMin <= startMin) {
+                return res.status(400).json({ success: false, message: 'Check-out must be after check-in' });
+            }
+
+            const pricePerPerson = calculatePricePerPerson(finalCheckIn, finalCheckOut);
+            if (pricePerPerson === null) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid check-in or check-out time format. Use HH:mm format.'
+                });
+            }
+
+            updateData.checkInTime = finalCheckIn;
+            updateData.checkOutTime = finalCheckOut;
+            updateData.pricePerPerson = pricePerPerson;
         }
 
         // Calculate totalAmount if guests or pricePerPerson are updated
@@ -174,4 +270,16 @@ export const deletePoolBooking = async (req, res) => {
             message: error.message
         });
     }
+};
+
+const timeToMinutes = (t) => {
+    const [h, m] = (t || '').split(':').map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    return h * 60 + m;
+};
+
+const isTimeInAllowedWindow = (time) => {
+    const minutes = timeToMinutes(time);
+    if (minutes === null) return false;
+    return minutes >= 8 * 60 && minutes <= 19 * 60; // 08:00 - 19:00
 };
