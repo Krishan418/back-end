@@ -1,27 +1,36 @@
-import MenuItem from "../models/menuitem.js";
+import MenuItem from "../models/MenuItem.js";
 
-// 1. GET ALL ITEMS (Search, Filter, Pagination)
+// 1. GET ALL ITEMS (Search, Filter, Pagination, Populate)
 export const getMenuItems = async (req, res) => {
   try {
-    const { category, search, page = 1, limit = 10 } = req.query;
+    const { category, search, page, limit, populate } = req.query;
     let query = {};
 
     if (category) query.category = category;
     if (search) query.name = { $regex: search, $options: "i" };
 
-    const skip = (page - 1) * limit;
+    // If no page/limit, return all (useful for dropdowns/simple lists)
+    if (!page && !limit) {
+      let q = MenuItem.find(query).sort({ name: 1 });
+      if (populate) q = q.populate(populate);
+      const items = await q.lean();
+      return res.status(200).json(items);
+    }
 
-    const items = await MenuItem.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit));
+    const p = Number(page) || 1;
+    const l = Number(limit) || 10;
+    const skip = (p - 1) * l;
 
+    let q = MenuItem.find(query).sort({ createdAt: -1 }).skip(skip).limit(l);
+    if (populate) q = q.populate(populate);
+    
+    const items = await q.lean();
     const totalItems = await MenuItem.countDocuments(query);
 
-    res.json({
+    res.status(200).json({
       items,
-      totalPages: Math.ceil(totalItems / limit),
-      currentPage: Number(page),
+      totalPages: Math.ceil(totalItems / l),
+      currentPage: p,
       totalItems
     });
   } catch (error) {
@@ -32,9 +41,10 @@ export const getMenuItems = async (req, res) => {
 // 2. GET SINGLE ITEM
 export const getMenuItemById = async (req, res) => {
   try {
-    const item = await MenuItem.findById(req.params.id);
+    const item = await MenuItem.findById(req.params.id).lean();
     if (!item) return res.status(404).json({ message: "Menu item not found" });
-    res.json(item);
+    
+    res.status(200).json(item);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -43,7 +53,7 @@ export const getMenuItemById = async (req, res) => {
 // 3. CREATE ITEM
 export const createMenuItem = async (req, res) => {
   try {
-    const { name, category, price, isAvailable, description } = req.body;
+    const { name, category, price, isAvailable, description, inventoryItem, prepTime } = req.body;
 
     if (!name || !category || price == null) {
       return res.status(400).json({ message: "Name, category, and price are required" });
@@ -54,15 +64,21 @@ export const createMenuItem = async (req, res) => {
 
     let image = "";
     if (req.file) {
-      image = req.file.path; 
+      image = req.file.path.replace(/\\/g, "/"); 
     } else if (req.body.image) {
       image = req.body.image; 
     }
 
     const item = await MenuItem.create({
-      name, category, price: Number(price), isAvailable, description, image,
+      name,
+      category,
+      price: Number(price),
+      isAvailable: isAvailable === "true" || isAvailable === true,
+      description,
+      image,
+      inventoryItem: inventoryItem || null,
+      prepTime: Number(prepTime) || 15,
     });
-
     res.status(201).json(item);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -77,13 +93,22 @@ export const updateMenuItem = async (req, res) => {
     }
 
     if (req.file) {
-      req.body.image = req.file.path;
+      req.body.image = req.file.path.replace(/\\/g, "/");
     }
 
-    const item = await MenuItem.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!item) return res.status(404).json({ message: "Menu item not found" });
+    // Handle inventoryItem mapping and numeric casting for updates
+    if (req.body.inventoryItem === "") req.body.inventoryItem = null;
+    if (req.body.price != null) req.body.price = Number(req.body.price);
+    if (req.body.prepTime != null) req.body.prepTime = Number(req.body.prepTime);
+
+    // runValidators: true added to ensure schema rules are checked on update
+    const item = await MenuItem.findByIdAndUpdate(req.params.id, req.body, { 
+      new: true, 
+      runValidators: true 
+    });
     
-    res.json(item);
+    if (!item) return res.status(404).json({ message: "Menu item not found" });
+    res.status(200).json(item);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -95,7 +120,7 @@ export const deleteMenuItem = async (req, res) => {
     const item = await MenuItem.findByIdAndDelete(req.params.id);
     if (!item) return res.status(404).json({ message: "Menu item not found" });
     
-    res.json({ message: "Menu item successfully deleted" });
+    res.status(200).json({ message: "Menu item successfully deleted" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

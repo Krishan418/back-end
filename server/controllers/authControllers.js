@@ -1,6 +1,8 @@
 import User from '../models/user.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/generateToken.js';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import sendEmail from '../utils/email.js';
 
 
 // Register new user (always registers as 'customer')
@@ -85,6 +87,14 @@ export const login = async (req, res) => {
             });
         }
 
+        // Check if user is active
+        if (user.status !== 'active') {
+            return res.status(403).json({
+                success: false,
+                message: 'Your account has been deactivated. Please contact support.'
+            });
+        }
+
         // Compare password
         const isPasswordMatch = await user.comparePassword(password);
         if (!isPasswordMatch) {
@@ -155,60 +165,6 @@ export const getAllUsers = async (req, res) => {
     }
 };
 
-// Create staff user (Admin only)
-export const createStaff = async (req, res) => {
-    try {
-        const { name, email, phone, role, department, salary, joinDate, status } = req.body;
-
-        if (!name || !email) {
-            return res.status(400).json({ success: false, message: 'Name and email are required' });
-        }
-
-        // Allow all staff roles (admin role cannot be assigned via this endpoint)
-        const allowedRoles = ['staff', 'manager', 'receptionist', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance'];
-        const assignedRole = (role || 'staff').toLowerCase();
-        if (!allowedRoles.includes(assignedRole)) {
-            return res.status(400).json({ success: false, message: 'Invalid role for this endpoint' });
-        }
-
-        const existing = await User.findOne({ email });
-        if (existing) return res.status(400).json({ success: false, message: 'User already exists' });
-
-        // Generate a temporary password for staff — admin should instruct staff to reset
-        const tempPassword = `Staff@${Math.random().toString(36).slice(2,8)}`;
-
-        const user = await User.create({
-            name,
-            email,
-            password: tempPassword,
-            confirmPassword: tempPassword,
-            phone,
-            role: assignedRole,
-            department,
-            salary,
-            joinDate,
-            status
-        });
-
-        res.status(201).json({
-            success: true,
-            data: {
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                phone: user.phone,
-                department: user.department,
-                salary: user.salary,
-                joinDate: user.joinDate,
-                status: user.status
-            }
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
 // Update user role (Admin only)
 export const updateUserRole = async (req, res) => {
     try {
@@ -250,6 +206,244 @@ export const updateUserRole = async (req, res) => {
     }
 };
 
+// Refresh Token Controller - Generates a new Access Token using a valid Refresh Token
+export const refresh = async (req, res) => {
+    try {
+        const { refreshToken } = req.body;
+
+        if (!refreshToken) {
+            return res.status(401).json({ success: false, message: 'Refresh Token is required' });
+        }
+
+        // Verify the refresh token
+        const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+        
+        // Find the user to make sure they still exist
+        const user = await User.findById(decoded.id);
+        if (!user) {
+            return res.status(401).json({ success: false, message: 'User not found' });
+        }
+
+        // Generate a new Access Token (15 min)
+        const newAccessToken = generateAccessToken(user._id, user.role);
+
+        res.status(200).json({
+            success: true,
+            token: newAccessToken
+        });
+    } catch (error) {
+        res.status(401).json({ 
+            success: false, 
+            message: 'Invalid or expired refresh token. Please login again.' 
+        });
+    }
+};
+
+// Update user details (Me)
+export const updateMe = async (req, res) => {
+    try {
+        const { name, email, phone } = req.body;
+
+        const user = await User.findByIdAndUpdate(
+            req.user.id,
+            { name, email, phone },
+            { new: true, runValidators: true }
+        );
+
+        res.status(200).json({
+            success: true,
+            data: user
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Update password
+export const updatePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ success: false, message: 'Please provide current and new password' });
+        }
+
+        const user = await User.findById(req.user.id).select('+password');
+
+        if (!(await user.comparePassword(currentPassword))) {
+            return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+        }
+
+        user.password = newPassword;
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Password updated successfully'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Forgot Password
+export const forgotPassword = async (req, res) => {
+    try {
+        const user = await User.findOne({ email: req.body.email });
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'There is no user with that email address.' });
+        }
+
+        // Get reset token
+        const resetToken = user.getResetPasswordToken();
+
+        await user.save({ validateBeforeSave: false });
+
+        // Create reset URL
+        const resetUrl = `${req.protocol}://${req.get('host')}/api/auth/resetpassword/${resetToken}`;
+
+        const message = `Forgot your password? Submit a PATCH request with your new password and confirmPassword to: ${resetUrl}.\nIf you didn't forget your password, please ignore this email!`;
+
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: 'Your password reset token (valid for 10 min)',
+                message
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Token sent to email!'
+            });
+        } catch (err) {
+            user.resetPasswordToken = undefined;
+            user.resetPasswordExpire = undefined;
+            await user.save({ validateBeforeSave: false });
+
+            return res.status(500).json({ success: false, message: 'There was an error sending the email. Try again later!' });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Reset Password
+export const resetPassword = async (req, res) => {
+    try {
+        // Get hashed token
+        const resetPasswordToken = crypto
+            .createHash('sha256')
+            .update(req.params.resettoken)
+            .digest('hex');
+
+        const user = await User.findOne({
+            resetPasswordToken,
+            resetPasswordExpire: { $gt: Date.now() }
+        });
+
+        if (!user) {
+            return res.status(400).json({ success: false, message: 'Token is invalid or has expired' });
+        }
+
+        // Set new password
+        user.password = req.body.password;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpire = undefined;
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Password reset successful'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Deactivate user (Admin only)
+export const deactivateUser = async (req, res) => {
+    try {
+        const { status } = req.body; // 'active' or 'inactive'
+        
+        if (!['active', 'inactive'].includes(status)) {
+            return res.status(400).json({ success: false, message: 'Invalid status' });
+        }
+
+        const user = await User.findByIdAndUpdate(
+            req.params.id,
+            { status },
+            { new: true, runValidators: true }
+        );
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `User ${user.name} is now ${status}`,
+            data: user
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Create staff user (Admin only)
+export const createStaff = async (req, res) => {
+    try {
+        const { name, email, phone, role, department, salary, joinDate, status } = req.body;
+
+        if (!name || !email) {
+            return res.status(400).json({ success: false, message: 'Name and email are required' });
+        }
+
+        // Allow all staff roles (admin role cannot be assigned via this endpoint)
+        const allowedRoles = ['staff', 'manager', 'receptionist', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance'];
+        const assignedRole = (role || 'staff').toLowerCase();
+        if (!allowedRoles.includes(assignedRole)) {
+            return res.status(400).json({ success: false, message: 'Invalid role for this endpoint' });
+        }
+
+        const existing = await User.findOne({ email });
+        if (existing) return res.status(400).json({ success: false, message: 'User already exists' });
+
+        // Generate a temporary password for staff — admin should instruct staff to reset
+        const tempPassword = `Staff@${Math.random().toString(36).slice(2,8)}`;
+
+        const user = await User.create({
+            name,
+            email,
+            password: tempPassword,
+            confirmPassword: tempPassword,
+            phone,
+            role: assignedRole,
+            department,
+            salary,
+            joinDate,
+            status: status || 'active'
+        });
+
+        res.status(201).json({
+            success: true,
+            data: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                phone: user.phone,
+                department: user.department,
+                salary: user.salary,
+                joinDate: user.joinDate,
+                status: user.status
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 // Update user details (Admin only)
 export const updateUser = async (req, res) => {
     try {
@@ -262,7 +456,7 @@ export const updateUser = async (req, res) => {
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        // Prevent demoting the last admin or modifying admin via this route? Keep simple: allow edits but prevent role change to admin here
+        // Prevent assigning admin role via this route
         if (updates.role && updates.role === 'admin') {
             return res.status(403).json({ success: false, message: 'Cannot assign admin role via this endpoint' });
         }
@@ -301,39 +495,6 @@ export const deleteUser = async (req, res) => {
         res.status(200).json({ success: true, message: 'User deleted' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-// Refresh Token Controller - Generates a new Access Token using a valid Refresh Token
-export const refresh = async (req, res) => {
-    try {
-        const { refreshToken } = req.body;
-
-        if (!refreshToken) {
-            return res.status(401).json({ success: false, message: 'Refresh Token is required' });
-        }
-
-        // Verify the refresh token
-        const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
-        
-        // Find the user to make sure they still exist
-        const user = await User.findById(decoded.id);
-        if (!user) {
-            return res.status(401).json({ success: false, message: 'User not found' });
-        }
-
-        // Generate a new Access Token (15 min)
-        const newAccessToken = generateAccessToken(user._id, user.role);
-
-        res.status(200).json({
-            success: true,
-            token: newAccessToken
-        });
-    } catch (error) {
-        res.status(401).json({ 
-            success: false, 
-            message: 'Invalid or expired refresh token. Please login again.' 
-        });
     }
 };
 

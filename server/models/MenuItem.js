@@ -35,6 +35,15 @@ const menuItemSchema = new mongoose.Schema(
       type: String, 
       default: "" 
     },
+    inventoryItem: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Inventory",
+      default: null
+    },
+    prepTime: {
+      type: Number,
+      default: 15
+    }
   },
   { timestamps: true }
 );
