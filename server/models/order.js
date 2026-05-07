@@ -4,7 +4,7 @@ const orderSchema = new mongoose.Schema(
   {
     orderType: {
       type: String,
-      enum: ["Dine-in", "Room", "Delivery"],
+      enum: ["Dine-in", "Room", "Delivery", "Take-away"],
       required: true,
     },
     // Newly added fields (filled based on the order type)
@@ -12,6 +12,12 @@ const orderSchema = new mongoose.Schema(
     roomNumber: { type: String }, 
     deliveryAddress: { type: String }, 
     contactNumber: { type: String },
+    coordinates: {
+      lat: { type: Number },
+      lng: { type: Number }
+    },
+    customerName: { type: String },
+    customerUser: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 
     items: [
       {
@@ -25,6 +31,8 @@ const orderSchema = new mongoose.Schema(
     tax: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
     totalAmount: { type: Number, required: true },
+    paymentMethod: { type: String, default: 'Other' },
+    orderNumber: { type: String, index: true },
     orderStatus: {
       type: String,
       enum: ["Pending", "Preparing", "Completed", "Cancelled"],
@@ -35,6 +43,8 @@ const orderSchema = new mongoose.Schema(
       enum: ["Unpaid", "Paid"],
       default: "Unpaid",
     },
+    amountReceived: { type: Number, default: 0 },
+    balance: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
