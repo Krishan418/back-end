@@ -3,6 +3,7 @@ import {
     createBooking, 
     deleteBookingRequest, 
     getHallAvailability, 
+    getMonthlyBookedDates,
     updateBookingStatus,
     getHalls,
     toggleHallStatus,
@@ -14,6 +15,7 @@ const router = express.Router();
 
 // Public routes (or any logged in user)
 router.get('/halls/availability', getHallAvailability);
+router.get('/halls/booked-dates', getMonthlyBookedDates);
 
 // Protected routes
 router.post('/bookings', protect, createBooking);

@@ -14,7 +14,9 @@ import {
     createStaff,
     updateUser,
     deleteUser,
-    changePassword
+    changePassword,
+    verifyEmail,
+    resendOTP
 } from '../controllers/authControllers.js';
 
 import { protect, authorize } from '../middleware/authMiddleware.js';
@@ -27,6 +29,8 @@ router.post('/login', login);
 router.post('/refresh', refresh);
 router.post('/forgotpassword', forgotPassword);
 router.put('/resetpassword/:resettoken', resetPassword);
+router.post('/verify-email', verifyEmail);
+router.post('/resend-otp', resendOTP);
 
 // Protected routes (any logged-in user)
 router.get('/me', protect, getMe);

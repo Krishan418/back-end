@@ -64,6 +64,12 @@ const userSchema = new mongoose.Schema({
         enum: ['active', 'inactive'],
         default: 'active'
     },
+    isVerified: {
+        type: Boolean,
+        default: false
+    },
+    verificationOTP: String,
+    verificationOTPExpire: Date,
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     createdAt: {

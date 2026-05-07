@@ -332,3 +332,46 @@ export const toggleHallStatus = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
+// Public: Get monthly booked dates for the calendar
+export const getMonthlyBookedDates = async (req, res) => {
+    try {
+        const { year, month } = req.query; // format: 2026, 5
+        
+        if (!year || !month) {
+             return res.status(400).json({ success: false, message: 'Please provide year and month query parameters' });
+        }
+
+        // JS Date month is 0-indexed
+        const startDate = new Date(year, month - 1, 1);
+        const endDate = new Date(year, month, 0, 23, 59, 59, 999); // last day of the month
+
+        // Find all bookings in this month that are pending or confirmed
+        const bookings = await WeddingBooking.find({
+            eventDate: { $gte: startDate, $lte: endDate },
+            bookingStatus: { $in: ['pending', 'confirmed'] }
+        }).select('eventDate hallId');
+
+        // Group by date
+        const dateMap = {};
+        bookings.forEach(booking => {
+            const dateStr = booking.eventDate.toISOString().split('T')[0];
+            if (!dateMap[dateStr]) {
+                dateMap[dateStr] = new Set();
+            }
+            dateMap[dateStr].add(booking.hallId.toString());
+        });
+
+        const bookedDates = Object.keys(dateMap).map(date => ({
+            date,
+            bookedVenuesCount: dateMap[date].size
+        }));
+
+        res.status(200).json({
+            success: true,
+            data: bookedDates
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
