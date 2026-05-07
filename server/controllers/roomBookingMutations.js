@@ -1,17 +1,13 @@
-import mongoose from 'mongoose';
-
 import Booking from '../models/booking.js';
 import Room from '../models/room.js';
 import {
-	abortTransactionWithResponse,
-	calculateNights,
 	CANCELLABLE_BY_USER,
 	isValidStatusTransition,
-	sanitizeDecorationItems
+	sanitizeDecorationItems,
+	calculateDecorationTotal
 } from './roombookinghekpers.js';
 
 export const createBooking = async (req, res) => {
-	let session;
 	try {
 		// Read booking input from request body.
 		const {
@@ -23,7 +19,9 @@ export const createBooking = async (req, res) => {
 			email,
 			phone,
 			specialRequests,
-			decorationItems
+			decorationItems,
+			checkInType,
+			checkOutType
 		} = req.body;
 
 		if (!roomId || !checkInDate || !checkOutDate || !guests || !fullName || !email) {
@@ -33,33 +31,24 @@ export const createBooking = async (req, res) => {
 			});
 		}
 
-		// Calculate total nights and reject invalid date ranges.
-		const nights = calculateNights(checkInDate, checkOutDate);
-		if (nights < 1) {
-			return res.status(400).json({
-				success: false,
-				message: 'Check-out date must be after check-in date'
-			});
-		}
-
-		session = await mongoose.startSession();
-		session.startTransaction();
-
 		// Lock/check room inside transaction so availability stays consistent.
-		const room = await Room.findById(roomId).session(session);
+		const room = await Room.findById(roomId);
 		if (!room || !room.isActive) {
-			return await abortTransactionWithResponse(session, res, 404, {
+			return res.status(404).json({
 				success: false,
 				message: 'Room not found'
 			});
 		}
 
-		if (room.availableRooms < 1) {
-			return await abortTransactionWithResponse(session, res, 400, {
-				success: false,
-				message: 'Room is currently fully booked'
-			});
-		}
+		// Calculate total slots (Day=0, Night=1)
+		// Day = date * 2, Night = date * 2 + 1
+		const startMs = new Date(checkInDate).getTime();
+		const endMs = new Date(checkOutDate).getTime();
+		
+		const startIndex = (Math.floor(startMs / (1000 * 60 * 60 * 24)) * 2) + (checkInType === 'Night' ? 1 : 0);
+		const endIndex = (Math.floor(endMs / (1000 * 60 * 60 * 24)) * 2) + (checkOutType === 'Night' ? 1 : 0);
+		
+		const slots = Math.max(1, endIndex - startIndex + 1);
 
 		const normalizedEmail = String(email).trim().toLowerCase();
 		const overlapOrConditions = [{ email: normalizedEmail }];
@@ -67,52 +56,73 @@ export const createBooking = async (req, res) => {
 			overlapOrConditions.push({ user: req.user._id });
 		}
 
-		// Prevent duplicate overlapping bookings for same user/email and room.
-		const overlappingBooking = await Booking.findOne({
+		// 1. Prevent duplicate overlapping bookings for SAME USER/EMAIL.
+		const userDuplicate = await Booking.findOne({
 			room: room._id,
 			status: { $ne: 'cancelled' },
-			checkInDate: { $lt: new Date(checkOutDate) },
-			checkOutDate: { $gt: new Date(checkInDate) },
+			startIndex: { $lte: endIndex },
+			endIndex: { $gte: startIndex },
 			$or: overlapOrConditions
-		}).session(session);
+		});
 
-		if (overlappingBooking) {
-			return await abortTransactionWithResponse(session, res, 409, {
+		if (userDuplicate) {
+			return res.status(409).json({
 				success: false,
-				message: 'An overlapping booking already exists for these dates'
+				message: 'You already have an overlapping booking for these dates'
 			});
 		}
 
-		room.availableRooms -= 1;
-		await room.save({ session });
+		// 2. Check ROOM CAPACITY for these specific slots.
+		const overlappingBookings = await Booking.find({
+			room: room._id,
+			status: { $ne: 'cancelled' },
+			startIndex: { $lte: endIndex },
+			endIndex: { $gte: startIndex }
+		});
+
+		// Count occupancy for each slot in the requested range
+		for (let s = startIndex; s <= endIndex; s++) {
+			const occupancy = overlappingBookings.filter(b => b.startIndex <= s && b.endIndex >= s).length;
+			if (occupancy >= (room.totalRooms || 1)) {
+				return res.status(400).json({
+					success: false,
+					message: `Room is fully booked for some of the selected dates/times`
+				});
+			}
+		}
+
+		// If global counter is still used, decrement it.
+		if (room.availableRooms > 0) {
+			room.availableRooms -= 1;
+			await room.save();
+		}
 
 		// Decorations are allowed only for honeymoon room types.
 		const supportsDecorations = String(room.name || '').toLowerCase().includes('honeymoon');
 		const sanitizedDecorationItems = supportsDecorations ? sanitizeDecorationItems(decorationItems) : [];
+		const decorationTotal = calculateDecorationTotal(sanitizedDecorationItems);
 
-		// Price is room price multiplied by number of nights.
-		const totalPrice = room.price * nights;
-		const [booking] = await Booking.create(
-			[
-				{
-					room: room._id,
-					user: req.user?._id || null,
-					fullName,
-					email: normalizedEmail,
-					phone,
-					guests,
-					checkInDate,
-					checkOutDate,
-					nights,
-					totalPrice,
-					specialRequests,
-					decorationItems: sanitizedDecorationItems
-				}
-			],
-			{ session }
-		);
+		// Price calculation logic: (Base Price * Slots) + Decoration Total
+		const totalPrice = (room.price * slots) + decorationTotal;
 
-		await session.commitTransaction();
+		const booking = await Booking.create({
+			room: room._id,
+			user: req.user?._id || null,
+			fullName,
+			email: normalizedEmail,
+			phone,
+			guests,
+			checkInDate,
+			checkOutDate,
+			nights: slots,
+			totalPrice,
+			specialRequests,
+			decorationItems: sanitizedDecorationItems,
+			checkInType: checkInType || 'Day',
+			checkOutType: checkOutType || 'Night',
+			startIndex,
+			endIndex
+		});
 
 		const populatedBooking = await Booking.findById(booking._id).populate('room', 'name price image');
 
@@ -121,22 +131,14 @@ export const createBooking = async (req, res) => {
 			data: populatedBooking
 		});
 	} catch (error) {
-		if (session && session.inTransaction()) {
-			await session.abortTransaction();
-		}
 		res.status(400).json({
 			success: false,
 			message: error.message
 		});
-	} finally {
-		if (session) {
-			await session.endSession();
-		}
 	}
 };
 
 export const updateBookingStatus = async (req, res) => {
-	let session;
 	try {
 		const { status } = req.body;
 		// Restrict status updates to known values.
@@ -149,27 +151,24 @@ export const updateBookingStatus = async (req, res) => {
 			});
 		}
 
-		session = await mongoose.startSession();
-		session.startTransaction();
-
-		const booking = await Booking.findById(req.params.id).session(session);
+		const booking = await Booking.findById(req.params.id);
 		if (!booking) {
-			return await abortTransactionWithResponse(session, res, 404, {
+			return res.status(404).json({
 				success: false,
 				message: 'Booking not found'
 			});
 		}
 
 		if (!isValidStatusTransition(booking.status, status)) {
-			return await abortTransactionWithResponse(session, res, 400, {
+			return res.status(400).json({
 				success: false,
 				message: `Invalid status transition: ${booking.status} -> ${status}`
 			});
 		}
 
-		const room = await Room.findById(booking.room).session(session);
+		const room = await Room.findById(booking.room);
 		if (!room) {
-			return await abortTransactionWithResponse(session, res, 404, {
+			return res.status(404).json({
 				success: false,
 				message: 'Associated room not found'
 			});
@@ -178,25 +177,23 @@ export const updateBookingStatus = async (req, res) => {
 		// Return room slot when a booking is cancelled.
 		if (booking.status !== 'cancelled' && status === 'cancelled') {
 			room.availableRooms += 1;
-			await room.save({ session });
+			await room.save();
 		}
 
 		// Consume a room slot if reactivating a cancelled booking.
 		if (booking.status === 'cancelled' && status !== 'cancelled') {
 			if (room.availableRooms < 1) {
-				return await abortTransactionWithResponse(session, res, 400, {
+				return res.status(400).json({
 					success: false,
 					message: 'Cannot reactivate booking: room has no available slots'
 				});
 			}
 			room.availableRooms -= 1;
-			await room.save({ session });
+			await room.save();
 		}
 
 		booking.status = status;
-		await booking.save({ session });
-
-		await session.commitTransaction();
+		await booking.save();
 
 		const updatedBooking = await Booking.findById(booking._id).populate('room', 'name price image');
 
@@ -205,36 +202,25 @@ export const updateBookingStatus = async (req, res) => {
 			data: updatedBooking
 		});
 	} catch (error) {
-		if (session && session.inTransaction()) {
-			await session.abortTransaction();
-		}
 		res.status(500).json({
 			success: false,
 			message: error.message
 		});
-	} finally {
-		if (session) {
-			await session.endSession();
-		}
 	}
 };
 
 export const cancelMyBooking = async (req, res) => {
-	let session;
 	try {
-		session = await mongoose.startSession();
-		session.startTransaction();
-
-		const booking = await Booking.findById(req.params.id).session(session);
+		const booking = await Booking.findById(req.params.id);
 		if (!booking) {
-			return await abortTransactionWithResponse(session, res, 404, {
+			return res.status(404).json({
 				success: false,
 				message: 'Booking not found'
 			});
 		}
 
 		if (!booking.user || booking.user.toString() !== req.user._id.toString()) {
-			return await abortTransactionWithResponse(session, res, 403, {
+			return res.status(403).json({
 				success: false,
 				message: 'Not authorized to cancel this booking'
 			});
@@ -242,7 +228,7 @@ export const cancelMyBooking = async (req, res) => {
 
 		// Users can cancel only selected statuses.
 		if (booking.status !== 'cancelled' && !CANCELLABLE_BY_USER.includes(booking.status)) {
-			return await abortTransactionWithResponse(session, res, 400, {
+			return res.status(400).json({
 				success: false,
 				message: `Cannot cancel booking in status: ${booking.status}`
 			});
@@ -250,16 +236,14 @@ export const cancelMyBooking = async (req, res) => {
 
 		// Only first cancellation changes availability and booking status.
 		if (booking.status !== 'cancelled') {
-			const room = await Room.findById(booking.room).session(session);
+			const room = await Room.findById(booking.room);
 			if (room) {
 				room.availableRooms += 1;
-				await room.save({ session });
+				await room.save();
 			}
 			booking.status = 'cancelled';
-			await booking.save({ session });
+			await booking.save();
 		}
-
-		await session.commitTransaction();
 
 		res.status(200).json({
 			success: true,
@@ -267,16 +251,9 @@ export const cancelMyBooking = async (req, res) => {
 			data: booking
 		});
 	} catch (error) {
-		if (session && session.inTransaction()) {
-			await session.abortTransaction();
-		}
 		res.status(500).json({
 			success: false,
 			message: error.message
 		});
-	} finally {
-		if (session) {
-			await session.endSession();
-		}
 	}
 };
