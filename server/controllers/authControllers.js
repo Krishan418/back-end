@@ -4,6 +4,100 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import sendEmail from '../utils/email.js';
 
+const getOTPTemplate = (otp, name) => {
+    return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            .email-container {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                max-width: 600px;
+                margin: 0 auto;
+                background-color: #ffffff;
+                border-radius: 16px;
+                overflow: hidden;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            }
+            .header {
+                background-color: #0F172A;
+                padding: 40px 20px;
+                text-align: center;
+            }
+            .logo-text {
+                color: #D4AF37;
+                font-size: 24px;
+                font-weight: bold;
+                letter-spacing: 4px;
+                margin: 0;
+            }
+            .content {
+                padding: 40px 30px;
+                color: #334155;
+                line-height: 1.6;
+            }
+            .greeting {
+                font-size: 18px;
+                font-weight: 600;
+                color: #0F172A;
+                margin-bottom: 20px;
+            }
+            .otp-container {
+                background-color: #F8FAFC;
+                border: 2px dashed #D4AF37;
+                border-radius: 12px;
+                padding: 30px;
+                text-align: center;
+                margin: 30px 0;
+            }
+            .otp-code {
+                font-size: 42px;
+                font-weight: 800;
+                color: #0F172A;
+                letter-spacing: 12px;
+                margin: 0;
+            }
+            .footer {
+                background-color: #F8FAFC;
+                padding: 20px;
+                text-align: center;
+                font-size: 12px;
+                color: #94A3B8;
+            }
+            .warning {
+                font-size: 13px;
+                color: #64748B;
+                margin-top: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="email-container">
+            <div class="header">
+                <h1 class="logo-text">HOTEL JANRO</h1>
+            </div>
+            <div class="content">
+                <p class="greeting">Hello ${name},</p>
+                <p>Welcome to Hotel Janro! We're excited to have you with us. To complete your registration and secure your account, please use the verification code below:</p>
+                
+                <div class="otp-container">
+                    <h2 class="otp-code">${otp}</h2>
+                </div>
+                
+                <p>This code will expire in <strong>10 minutes</strong>. If you did not request this, please ignore this email.</p>
+                
+                <p class="warning">For your security, never share this code with anyone. Our staff will never ask for your verification code.</p>
+            </div>
+            <div class="footer">
+                <p>&copy; 2024 Hotel Janro. All rights reserved.</p>
+                <p>Luxury & Comfort in Every Stay</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+};
+
 
 // Register new user (always registers as 'customer')
 export const register = async (req, res) => {
@@ -37,26 +131,40 @@ export const register = async (req, res) => {
             email,
             password,
             confirmPassword,
-            phone
+            phone,
+            isVerified: false
         });
 
-        // Generate both Access and Refresh tokens
-        const accessToken = generateAccessToken(user._id, user.role);
-        const refreshToken = generateRefreshToken(user._id, user.role);
+        // Generate 6 digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        // Hash OTP for security
+        const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
+        
+        user.verificationOTP = hashedOTP;
+        user.verificationOTPExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+        await user.save({ validateBeforeSave: false });
 
+        // Send OTP via email
+        const message = `Welcome to Hotel Janro!\n\nYour email verification code is: ${otp}\n\nThis code will expire in 10 minutes.`;
+        const html = getOTPTemplate(otp, user.name);
+        
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: 'Hotel Janro - Verify Your Email',
+                message,
+                html
+            });
+        } catch (error) {
+            console.error("Failed to send OTP email", error);
+            // We continue even if email fails in dev, but in prod you might want to handle it
+        }
 
         res.status(201).json({
             success: true,
-            data: {
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                token: accessToken,
-                refreshToken
-            }
-
-
+            requireVerification: true,
+            message: "Registration successful. Please verify your email."
         });
     } catch (error) {
         res.status(500).json({ 
@@ -95,6 +203,15 @@ export const login = async (req, res) => {
             });
         }
 
+        // Check if user is verified
+        if (!user.isVerified) {
+            return res.status(401).json({
+                success: false,
+                requireVerification: true,
+                message: 'Please verify your email address before logging in.'
+            });
+        }
+
         // Compare password
         const isPasswordMatch = await user.comparePassword(password);
         if (!isPasswordMatch) {
@@ -115,6 +232,7 @@ export const login = async (req, res) => {
                 _id: user._id,
                 name: user.name,
                 email: user.email,
+                phone: user.phone,
                 role: user.role,
                 token: accessToken,
                 refreshToken
@@ -286,81 +404,6 @@ export const updatePassword = async (req, res) => {
     }
 };
 
-// Forgot Password
-export const forgotPassword = async (req, res) => {
-    try {
-        const user = await User.findOne({ email: req.body.email });
-
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'There is no user with that email address.' });
-        }
-
-        // Get reset token
-        const resetToken = user.getResetPasswordToken();
-
-        await user.save({ validateBeforeSave: false });
-
-        // Create reset URL
-        const resetUrl = `${req.protocol}://${req.get('host')}/api/auth/resetpassword/${resetToken}`;
-
-        const message = `Forgot your password? Submit a PATCH request with your new password and confirmPassword to: ${resetUrl}.\nIf you didn't forget your password, please ignore this email!`;
-
-        try {
-            await sendEmail({
-                email: user.email,
-                subject: 'Your password reset token (valid for 10 min)',
-                message
-            });
-
-            res.status(200).json({
-                success: true,
-                message: 'Token sent to email!'
-            });
-        } catch (err) {
-            user.resetPasswordToken = undefined;
-            user.resetPasswordExpire = undefined;
-            await user.save({ validateBeforeSave: false });
-
-            return res.status(500).json({ success: false, message: 'There was an error sending the email. Try again later!' });
-        }
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-// Reset Password
-export const resetPassword = async (req, res) => {
-    try {
-        // Get hashed token
-        const resetPasswordToken = crypto
-            .createHash('sha256')
-            .update(req.params.resettoken)
-            .digest('hex');
-
-        const user = await User.findOne({
-            resetPasswordToken,
-            resetPasswordExpire: { $gt: Date.now() }
-        });
-
-        if (!user) {
-            return res.status(400).json({ success: false, message: 'Token is invalid or has expired' });
-        }
-
-        // Set new password
-        user.password = req.body.password;
-        user.resetPasswordToken = undefined;
-        user.resetPasswordExpire = undefined;
-        await user.save();
-
-        res.status(200).json({
-            success: true,
-            message: 'Password reset successful'
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
 // Deactivate user (Admin only)
 export const deactivateUser = async (req, res) => {
     try {
@@ -526,6 +569,189 @@ export const changePassword = async (req, res) => {
         await user.save();
 
         res.status(200).json({ success: true, message: 'Password updated successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Forgot Password
+export const forgotPassword = async (req, res) => {
+    try {
+        const user = await User.findOne({ email: req.body.email });
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'There is no user with that email' });
+        }
+
+        // Get reset token
+        const resetToken = user.getResetPasswordToken();
+
+        await user.save({ validateBeforeSave: false });
+
+        // Create reset url (this assumes frontend runs on VITE_FRONTEND_URL or localhost:5173)
+        const frontendUrl = process.env.VITE_FRONTEND_URL || 'http://localhost:5173';
+        const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
+
+        const message = `You are receiving this email because you (or someone else) has requested the reset of a password. Please make a PUT request to: \n\n ${resetUrl}`;
+
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: 'Hotel Janro - Password Reset Token',
+                message
+            });
+
+            res.status(200).json({ success: true, message: 'Email sent' });
+        } catch (error) {
+            user.resetPasswordToken = undefined;
+            user.resetPasswordExpire = undefined;
+
+            await user.save({ validateBeforeSave: false });
+
+            return res.status(500).json({ success: false, message: 'Email could not be sent. Please check your email configuration.' });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Reset Password
+export const resetPassword = async (req, res) => {
+    try {
+        // Get hashed token
+        const resetPasswordToken = crypto
+            .createHash('sha256')
+            .update(req.params.resettoken)
+            .digest('hex');
+
+        const user = await User.findOne({
+            resetPasswordToken,
+            resetPasswordExpire: { $gt: Date.now() }
+        });
+
+        if (!user) {
+            return res.status(400).json({ success: false, message: 'Invalid token or token has expired' });
+        }
+
+        // Set new password
+        user.password = req.body.password;
+        user.confirmPassword = req.body.password;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpire = undefined;
+
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Password reset successfully'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Verify Email OTP
+export const verifyEmail = async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+
+        if (!email || !otp) {
+            return res.status(400).json({ success: false, message: 'Please provide email and OTP' });
+        }
+
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        if (user.isVerified) {
+            return res.status(400).json({ success: false, message: 'User is already verified' });
+        }
+
+        const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
+
+        if (user.verificationOTP !== hashedOTP) {
+            return res.status(400).json({ success: false, message: 'Invalid OTP' });
+        }
+
+        if (user.verificationOTPExpire < Date.now()) {
+            return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new one.' });
+        }
+
+        // Verify user and clear OTP
+        user.isVerified = true;
+        user.verificationOTP = undefined;
+        user.verificationOTPExpire = undefined;
+        await user.save({ validateBeforeSave: false });
+
+        // Generate tokens to log them in automatically
+        const accessToken = generateAccessToken(user._id, user.role);
+        const refreshToken = generateRefreshToken(user._id, user.role);
+
+        res.status(200).json({
+            success: true,
+            message: 'Email verified successfully',
+            data: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                phone: user.phone,
+                role: user.role,
+                token: accessToken,
+                refreshToken
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Resend Verification OTP
+export const resendOTP = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ success: false, message: 'Please provide email' });
+        }
+
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        if (user.isVerified) {
+            return res.status(400).json({ success: false, message: 'User is already verified' });
+        }
+
+        // Generate new 6 digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        // Hash OTP for security
+        const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
+        
+        user.verificationOTP = hashedOTP;
+        user.verificationOTPExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+        await user.save({ validateBeforeSave: false });
+
+        // Send OTP via email
+        const message = `Welcome to Hotel Janro!\n\nYour new email verification code is: ${otp}\n\nThis code will expire in 10 minutes.`;
+        const html = getOTPTemplate(otp, user.name);
+        
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: 'Hotel Janro - Verify Your Email',
+                message,
+                html
+            });
+
+            res.status(200).json({ success: true, message: 'A new verification code has been sent to your email.' });
+        } catch (error) {
+            console.error("Failed to send resend OTP email", error);
+            res.status(500).json({ success: false, message: 'Failed to send verification email. Please try again.' });
+        }
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
