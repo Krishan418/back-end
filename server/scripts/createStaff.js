@@ -17,14 +17,16 @@ const createStaff = async () => {
                 email: 'reception@hoteljanro.com',
                 password: 'reception123',
                 role: 'receptionist',
-                phone: '1111111111'
+                phone: '1111111111',
+                isVerified: true
             },
             {
                 name: 'Cashier',
                 email: 'cashier@hoteljanro.com',
                 password: 'cashier123',
                 role: 'cashier',
-                phone: '2222222222'
+                phone: '2222222222',
+                isVerified: true
             }
         ];
 
@@ -32,8 +34,9 @@ const createStaff = async () => {
             const existingUser = await User.findOne({ email: staff.email });
             if (existingUser) {
                 existingUser.role = staff.role;
+                existingUser.isVerified = true;
                 await existingUser.save({ validateBeforeSave: false });
-                console.log(`${staff.name} already exists, updated role to ${staff.role}`);
+                console.log(`${staff.name} already exists, updated role to ${staff.role} and set verified`);
                 continue;
             }
 
