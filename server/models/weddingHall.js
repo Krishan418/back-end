@@ -25,12 +25,19 @@ const weddingHallSchema = new mongoose.Schema(
             min: [0, 'Price cannot be negative']
         },
 
+        // Venue type
+        type: {
+            type: String,
+            enum: ['Hall', 'Event Area'],
+            default: 'Hall'
+        },
+
         // Operational status of the hall.
         // `available` means it can be booked.
         // `maintenance`/`unavailable` means it should not be booked.
         status: {
             type: String,
-            enum: ['available', 'maintenance', 'unavailable'],
+            enum: ['available', 'maintenance', 'unavailable', 'occupied'],
             default: 'available'
         }
     },

@@ -15,7 +15,7 @@ export const generateAccessToken = (userId, role) => {
 export const generateRefreshToken = (userId, role) => {
     return jwt.sign(
         { id: userId, role },
-        process.env.JWT_SECRET, // In a real app, you might use a different secret for refresh tokens
+        process.env.JWT_SECRET, 
         { expiresIn: '7d' } // 7 days validity
     );
 };
