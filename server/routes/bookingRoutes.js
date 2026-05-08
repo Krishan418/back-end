@@ -6,7 +6,8 @@ import {
     getBookingById,
     updateBookingStatus,
     cancelMyBooking,
-    getMonthlyRevenueReport
+    getMonthlyRevenueReport,
+    deleteBooking
 } from '../controllers/bookingController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
@@ -21,5 +22,6 @@ router.patch('/:id/cancel', protect, cancelMyBooking);
 router.get('/', protect, authorize('admin', 'manager', 'staff'), getBookings);
 router.get('/:id', protect, getBookingById);
 router.patch('/:id/status', protect, authorize('admin', 'manager', 'staff'), updateBookingStatus);
+router.delete('/:id', protect, authorize('admin', 'manager', 'staff'), deleteBooking);
 
 export default router;
