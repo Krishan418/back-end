@@ -132,7 +132,7 @@ export const register = async (req, res) => {
             password,
             confirmPassword,
             phone,
-            isVerified: false
+            isVerified: true // Set to true by default for easier development
         });
 
         // Generate 6 digit OTP
@@ -203,6 +203,7 @@ export const login = async (req, res) => {
             });
         }
 
+        /* 
         // Check if user is verified
         if (!user.isVerified) {
             return res.status(401).json({
@@ -211,6 +212,7 @@ export const login = async (req, res) => {
                 message: 'Please verify your email address before logging in.'
             });
         }
+        */
 
         // Compare password
         const isPasswordMatch = await user.comparePassword(password);

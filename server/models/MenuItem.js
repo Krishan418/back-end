@@ -13,14 +13,24 @@ const menuItemSchema = new mongoose.Schema(
       type: String, 
       required: true, 
       trim: true,
-      enum: ["Main Course", "Appetizers", "Desserts", "Beverages", "Breakfast", "Snacks"], 
+      enum: ["Main Course", "Appetizers", "Desserts", "Beverages", "Breakfast", "Snacks", "Bites", "Chef's Specialty"], 
       index: true   
     },
     price: { 
       type: Number, 
-      required: true,
+      required: function() { return !this.hasPortions; }, // Only required if no portions
       min: [0, "Price cannot be negative"] 
     },
+    hasPortions: {
+      type: Boolean,
+      default: false
+    },
+    portions: [
+      {
+        portionType: { type: String, enum: ["Full", "Half"] },
+        price: { type: Number, min: 0 }
+      }
+    ],
     isAvailable: { 
       type: Boolean, 
       default: true 

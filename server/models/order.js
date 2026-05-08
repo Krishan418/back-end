@@ -23,11 +23,14 @@ const orderSchema = new mongoose.Schema(
       {
         menuItemId: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true },
         name: { type: String, required: true },
+        portion: { type: String, default: "" }, // Store "Full", "Half", or empty
         price: { type: Number, required: true },
         quantity: { type: Number, required: true },
       },
     ],
     subtotal: { type: Number, required: true },
+    serviceCharge: { type: Number, default: 0 },
+    deliveryFee: { type: Number, default: 0 },
     tax: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
     totalAmount: { type: Number, required: true },
