@@ -53,13 +53,23 @@ export const getMenuItemById = async (req, res) => {
 // 3. CREATE ITEM
 export const createMenuItem = async (req, res) => {
   try {
-    const { name, category, price, isAvailable, description, inventoryItem, prepTime } = req.body;
+    let { name, category, price, isAvailable, description, inventoryItem, prepTime, hasPortions, portions } = req.body;
 
-    if (!name || !category || price == null) {
-      return res.status(400).json({ message: "Name, category, and price are required" });
+    const isPortionsEnabled = hasPortions === "true" || hasPortions === true;
+    
+    if (!name || !category) {
+      return res.status(400).json({ message: "Name and category are required" });
     }
-    if (Number(price) <= 0) {
-      return res.status(400).json({ message: "Price must be greater than zero" });
+
+    if (!isPortionsEnabled && price == null) {
+      return res.status(400).json({ message: "Price is required when portions are disabled" });
+    }
+
+    let parsedPortions = [];
+    if (isPortionsEnabled && portions) {
+      parsedPortions = typeof portions === "string" ? JSON.parse(portions) : portions;
+      // Convert prices to numbers
+      parsedPortions = parsedPortions.map(p => ({ ...p, price: Number(p.price) }));
     }
 
     let image = "";
@@ -72,7 +82,9 @@ export const createMenuItem = async (req, res) => {
     const item = await MenuItem.create({
       name,
       category,
-      price: Number(price),
+      price: isPortionsEnabled ? undefined : Number(price),
+      hasPortions: isPortionsEnabled,
+      portions: parsedPortions,
       isAvailable: isAvailable === "true" || isAvailable === true,
       description,
       image,
@@ -88,24 +100,47 @@ export const createMenuItem = async (req, res) => {
 // 4. UPDATE ITEM
 export const updateMenuItem = async (req, res) => {
   try {
-    if (req.body.price != null && Number(req.body.price) <= 0) {
-      return res.status(400).json({ message: "Price must be greater than zero" });
-    }
+    const updateData = { ...req.body };
 
     if (req.file) {
-      req.body.image = req.file.path.replace(/\\/g, "/");
+      updateData.image = req.file.path.replace(/\\/g, "/");
     }
 
-    // Handle inventoryItem mapping and numeric casting for updates
-    if (req.body.inventoryItem === "") req.body.inventoryItem = null;
-    if (req.body.price != null) req.body.price = Number(req.body.price);
-    if (req.body.prepTime != null) req.body.prepTime = Number(req.body.prepTime);
-    if (req.body.isAvailable !== undefined) {
-      req.body.isAvailable = req.body.isAvailable === 'true' || req.body.isAvailable === true;
+    if (updateData.hasPortions !== undefined) {
+      updateData.hasPortions = updateData.hasPortions === 'true' || updateData.hasPortions === true;
     }
 
-    // runValidators: true added to ensure schema rules are checked on update
-    const item = await MenuItem.findByIdAndUpdate(req.params.id, req.body, { 
+    // Always parse portions if it's a string to prevent Mongoose casting errors
+    if (updateData.portions && typeof updateData.portions === "string") {
+      try {
+        updateData.portions = JSON.parse(updateData.portions);
+      } catch (e) {
+        console.error("Portions parse error:", e);
+      }
+    }
+
+    if (updateData.hasPortions) {
+      if (Array.isArray(updateData.portions)) {
+        updateData.portions = updateData.portions.map(p => ({ 
+          portionType: p.portionType, 
+          price: Number(p.price) 
+        }));
+      }
+      // If portions are enabled, we might want to unset the single price field
+    } else {
+      updateData.portions = []; 
+      if (updateData.price != null) {
+        updateData.price = Number(updateData.price);
+      }
+    }
+
+    if (updateData.inventoryItem === "") updateData.inventoryItem = null;
+    if (updateData.prepTime != null) updateData.prepTime = Number(updateData.prepTime);
+    if (updateData.isAvailable !== undefined) {
+      updateData.isAvailable = updateData.isAvailable === 'true' || updateData.isAvailable === true;
+    }
+
+    const item = await MenuItem.findByIdAndUpdate(req.params.id, updateData, { 
       new: true, 
       runValidators: true 
     });

@@ -14,7 +14,7 @@ export const createOrder = async (req, res) => {
     let subtotal = 0;
     const validatedItems = [];
 
-    // Use Promise.all to fetch all menu items and handle inventory
+    // Use Promise.all to fetch all menu items
     await Promise.all(items.map(async (item) => {
       const realMenuItem = await MenuItem.findById(item.menuItemId);
       
@@ -22,31 +22,30 @@ export const createOrder = async (req, res) => {
         throw new Error(`Menu item not found (ID: ${item.menuItemId})`);
       }
 
-      // If menu item is linked to inventory, check and deduct stock
-      if (realMenuItem.inventoryItem) {
-        const inventory = await Inventory.findById(realMenuItem.inventoryItem);
-        if (inventory) {
-          if (inventory.quantity < item.quantity) {
-            throw new Error(`Insufficient stock for ${realMenuItem.name}. Available: ${inventory.quantity}`);
-          }
-          // Deduct stock
-          inventory.quantity -= item.quantity;
-          await inventory.save();
+      let itemPrice = realMenuItem.price;
+      if (realMenuItem.hasPortions && item.portion) {
+        const selectedPortion = realMenuItem.portions.find(p => p.portionType === item.portion);
+        if (selectedPortion) {
+          itemPrice = selectedPortion.price;
         }
       }
 
-      subtotal += realMenuItem.price * item.quantity;
+      subtotal += itemPrice * item.quantity;
       
       validatedItems.push({
         menuItemId: realMenuItem._id,
         name: realMenuItem.name,
-        price: realMenuItem.price, 
+        portion: item.portion || "",
+        price: itemPrice, 
         quantity: item.quantity,
       });
     }));
 
-    const tax = subtotal * 0.1; // 10% tax
-    const totalAmount = Number((subtotal + tax - discount).toFixed(2));
+    // Use values from frontend if provided, otherwise fallback to basic subtotal
+    const finalSubtotal = req.body.subtotal || subtotal;
+    const finalServiceCharge = req.body.serviceCharge || 0;
+    const finalDeliveryFee = req.body.deliveryFee || 0;
+    const finalTotalAmount = Number((finalSubtotal + finalServiceCharge + finalDeliveryFee - discount).toFixed(2));
 
     // generate a readable order number if not provided
     const orderNumber = req.body.orderNumber || `POS-${Date.now().toString().slice(-6)}`;
@@ -54,7 +53,12 @@ export const createOrder = async (req, res) => {
     const order = await Order.create({
       orderType, tableNumber, roomNumber, deliveryAddress, 
       contactNumber, coordinates, customerName, customerUser,
-      items: validatedItems, subtotal, tax, discount, totalAmount,
+      items: validatedItems, 
+      subtotal: finalSubtotal, 
+      serviceCharge: finalServiceCharge,
+      deliveryFee: finalDeliveryFee,
+      discount, 
+      totalAmount: finalTotalAmount,
       paymentStatus: req.body.paymentStatus || 'Unpaid',
       paymentMethod: req.body.paymentMethod || 'Other',
       amountReceived: req.body.amountReceived || 0,
