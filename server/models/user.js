@@ -43,6 +43,22 @@ const userSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
+    emergencyContactPhone: {
+        type: String,
+        trim: true
+    },
+    nic: {
+        type: String,
+        unique: true,
+        sparse: true,
+        trim: true
+    },
+    employeeId: {
+        type: String,
+        unique: true,
+        sparse: true,
+        trim: true
+    },
     department: {
         type: String,
         trim: true

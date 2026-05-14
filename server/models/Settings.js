@@ -1,6 +1,11 @@
 import mongoose from 'mongoose';
 
 const settingsSchema = new mongoose.Schema({
+  hotelName: {
+    type: String,
+    required: true,
+    default: 'Hotel Janro'
+  },
   email: {
     type: String,
     required: true,

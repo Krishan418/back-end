@@ -17,13 +17,14 @@ export const getSettings = async (req, res) => {
 // Update settings
 export const updateSettings = async (req, res) => {
   try {
-    const { email, address, phone, website, currency, language, timezone, dateFormat } = req.body;
+    const { hotelName, email, address, phone, website, currency, language, timezone, dateFormat } = req.body;
     
     let settings = await Settings.findOne();
     
     if (!settings) {
-      settings = await Settings.create({ email, address, phone, website, currency, language, timezone, dateFormat });
+      settings = await Settings.create({ hotelName, email, address, phone, website, currency, language, timezone, dateFormat });
     } else {
+      settings.hotelName = hotelName || settings.hotelName;
       settings.email = email || settings.email;
       settings.address = address || settings.address;
       settings.phone = phone || settings.phone;
