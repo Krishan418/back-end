@@ -101,7 +101,7 @@ const getOTPTemplate = (otp, name, hotelName = 'Hotel Janro') => {
 };
 
 
-// Register new user (always registers as 'customer')
+// Register new user
 export const register = async (req, res) => {
     try {
         const { name, email, password, confirmPassword, phone } = req.body;
@@ -126,21 +126,18 @@ export const register = async (req, res) => {
             return res.status(400).json({ success: false, message: 'User already exists' });
         }
 
-        // Create new user (password will be hashed by the pre-save middleware)
-        // Role defaults to 'customer' — only admins can assign other roles
+        // Create user (password hashed by pre-save hook, role defaults to 'customer')
         const user = await User.create({
             name,
             email,
             password,
             confirmPassword,
             phone,
-            isVerified: true // Set to true by default for easier development
+            isVerified: true
         });
 
-        // Generate 6 digit OTP
+        // Generate & hash 6-digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        
-        // Hash OTP for security
         const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
         
         user.verificationOTP = hashedOTP;
@@ -165,7 +162,6 @@ export const register = async (req, res) => {
             });
         } catch (error) {
             console.error("Failed to send OTP email", error);
-            // We continue even if email fails in dev, but in prod you might want to handle it
         }
 
         res.status(201).json({
@@ -181,7 +177,7 @@ export const register = async (req, res) => {
     }
 };
 
-// Login user
+// Login user - verify credentials and return JWT tokens
 export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -193,7 +189,6 @@ export const login = async (req, res) => {
             });
         }
 
-        // Check if user exists and include password field
         const user = await User.findOne({ email }).select('+password');
         if (!user) {
             return res.status(401).json({ 
@@ -202,7 +197,6 @@ export const login = async (req, res) => {
             });
         }
 
-        // Check if user is active
         if (user.status !== 'active') {
             return res.status(403).json({
                 success: false,
@@ -210,18 +204,8 @@ export const login = async (req, res) => {
             });
         }
 
-        /* 
-        // Check if user is verified
-        if (!user.isVerified) {
-            return res.status(401).json({
-                success: false,
-                requireVerification: true,
-                message: 'Please verify your email address before logging in.'
-            });
-        }
-        */
 
-        // Compare password
+        // Verify password
         const isPasswordMatch = await user.comparePassword(password);
         if (!isPasswordMatch) {
             return res.status(401).json({ 
@@ -230,7 +214,7 @@ export const login = async (req, res) => {
             });
         }
 
-        // Generate both Access and Refresh tokens
+        // Generate JWT tokens
         const accessToken = generateAccessToken(user._id, user.role);
         const refreshToken = generateRefreshToken(user._id, user.role);
 
@@ -246,8 +230,6 @@ export const login = async (req, res) => {
                 token: accessToken,
                 refreshToken
             }
-
-
         });
     } catch (error) {
         res.status(500).json({ 
@@ -257,7 +239,7 @@ export const login = async (req, res) => {
     }
 };
 
-// Get current user profile
+// Get logged-in user profile
 export const getMe = async (req, res) => {
     try {
         const user = await User.findById(req.user._id);
@@ -333,7 +315,7 @@ export const updateUserRole = async (req, res) => {
     }
 };
 
-// Refresh Token Controller - Generates a new Access Token using a valid Refresh Token
+// Refresh access token using refresh token
 export const refresh = async (req, res) => {
     try {
         const { refreshToken } = req.body;
@@ -342,16 +324,13 @@ export const refresh = async (req, res) => {
             return res.status(401).json({ success: false, message: 'Refresh Token is required' });
         }
 
-        // Verify the refresh token
         const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
         
-        // Find the user to make sure they still exist
         const user = await User.findById(decoded.id);
         if (!user) {
             return res.status(401).json({ success: false, message: 'User not found' });
         }
 
-        // Generate a new Access Token (15 min)
         const newAccessToken = generateAccessToken(user._id, user.role);
 
         res.status(200).json({
@@ -366,7 +345,7 @@ export const refresh = async (req, res) => {
     }
 };
 
-// Update user details (Me)
+// Update own profile details
 export const updateMe = async (req, res) => {
     try {
         const { name, email, phone, address, emergencyContact } = req.body;
@@ -449,27 +428,26 @@ export const createStaff = async (req, res) => {
             name, email, phone, role, department, salary, joinDate, status,
             nic, employeeId, address, emergencyContact, emergencyContactPhone 
         } = req.body;
+        const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-        if (!name || !email) {
+        if (!name || !normalizedEmail) {
             return res.status(400).json({ success: false, message: 'Name and email are required' });
         }
 
-        // Allow all staff roles (admin role cannot be assigned via this endpoint)
         const allowedRoles = ['staff', 'manager', 'receptionist', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance'];
         const assignedRole = (role || 'staff').toLowerCase();
         if (!allowedRoles.includes(assignedRole)) {
             return res.status(400).json({ success: false, message: 'Invalid role for this endpoint' });
         }
 
-        const existing = await User.findOne({ email });
+        const existing = await User.findOne({ email: normalizedEmail });
         if (existing) return res.status(400).json({ success: false, message: 'User already exists' });
 
-        // Generate a temporary password for staff — admin should instruct staff to reset
         const tempPassword = `Staff@${Math.random().toString(36).slice(2,8)}`;
 
         const user = await User.create({
             name,
-            email,
+            email: normalizedEmail,
             password: tempPassword,
             confirmPassword: tempPassword,
             phone,
@@ -524,7 +502,7 @@ export const updateUser = async (req, res) => {
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        // Prevent assigning admin role via this route
+
         if (updates.role && updates.role === 'admin') {
             return res.status(403).json({ success: false, message: 'Cannot assign admin role via this endpoint' });
         }
@@ -584,16 +562,14 @@ export const changePassword = async (req, res) => {
             return res.status(400).json({ success: false, message: 'New passwords do not match' });
         }
 
-        // Find user by ID and include password
         const user = await User.findById(req.user._id).select('+password');
 
-        // Check if current password matches
         const isMatch = await user.comparePassword(currentPassword);
         if (!isMatch) {
             return res.status(401).json({ success: false, message: 'Incorrect current password' });
         }
 
-        // Set new password
+
         user.password = newPassword;
         user.confirmPassword = confirmPassword;
         await user.save();
@@ -612,12 +588,10 @@ export const forgotPassword = async (req, res) => {
             return res.status(404).json({ success: false, message: 'There is no user with that email' });
         }
 
-        // Get reset token
         const resetToken = user.getResetPasswordToken();
 
         await user.save({ validateBeforeSave: false });
 
-        // Create reset url (this assumes frontend runs on VITE_FRONTEND_URL or localhost:5173)
         const frontendUrl = process.env.VITE_FRONTEND_URL || 'http://localhost:5173';
         const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
 
@@ -652,7 +626,6 @@ export const forgotPassword = async (req, res) => {
 // Reset Password
 export const resetPassword = async (req, res) => {
     try {
-        // Get hashed token
         const resetPasswordToken = crypto
             .createHash('sha256')
             .update(req.params.resettoken)
@@ -667,7 +640,7 @@ export const resetPassword = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid token or token has expired' });
         }
 
-        // Set new password
+
         user.password = req.body.password;
         user.confirmPassword = req.body.password;
         user.resetPasswordToken = undefined;
@@ -713,13 +686,11 @@ export const verifyEmail = async (req, res) => {
             return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new one.' });
         }
 
-        // Verify user and clear OTP
         user.isVerified = true;
         user.verificationOTP = undefined;
         user.verificationOTPExpire = undefined;
         await user.save({ validateBeforeSave: false });
 
-        // Generate tokens to log them in automatically
         const accessToken = generateAccessToken(user._id, user.role);
         const refreshToken = generateRefreshToken(user._id, user.role);
 
@@ -760,10 +731,7 @@ export const resendOTP = async (req, res) => {
             return res.status(400).json({ success: false, message: 'User is already verified' });
         }
 
-        // Generate new 6 digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        
-        // Hash OTP for security
         const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
         
         user.verificationOTP = hashedOTP;
@@ -807,7 +775,6 @@ export const requestEmailChange = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Please provide the new email address' });
         }
 
-        // Check if email is already taken
         const existingUser = await User.findOne({ email: newEmail });
         if (existingUser) {
             return res.status(400).json({ success: false, message: 'This email is already in use' });
@@ -818,7 +785,6 @@ export const requestEmailChange = async (req, res) => {
             return res.status(404).json({ success: false, message: 'User not found' });
         }
 
-        // Generate 6 digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
 
@@ -827,7 +793,7 @@ export const requestEmailChange = async (req, res) => {
         user.verificationOTPExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
         await user.save({ validateBeforeSave: false });
 
-        // Send OTP to NEW email
+
         const html = `
             <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
                 <h2 style="color: #0F172A;">Confirm Your New Email Address</h2>
@@ -881,7 +847,7 @@ export const verifyEmailChange = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid or expired verification code' });
         }
 
-        // Update email
+
         user.email = user.pendingEmail;
         user.pendingEmail = undefined;
         user.verificationOTP = undefined;
