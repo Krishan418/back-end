@@ -5,6 +5,7 @@ import {
     getHallAvailability, 
     getMonthlyBookedDates,
     updateBookingStatus,
+    updateBooking,
     getHalls,
     toggleHallStatus,
     getMyBookings,
@@ -28,6 +29,7 @@ router.get('/my-bookings', protect, getMyBookings);
 
 // Admin/Staff routes
 router.post('/bookings', protect, authorize('admin', 'receptionist'), createBooking);
+router.put('/bookings/:id', protect, authorize('admin', 'receptionist'), updateBooking);
 router.get('/bookings', protect, authorize('admin', 'receptionist'), getAllBookings);
 router.get('/halls', protect, authorize('admin', 'receptionist'), getHalls);
 router.post('/halls', protect, authorize('admin'), createHall);

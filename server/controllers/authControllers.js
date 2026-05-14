@@ -362,11 +362,11 @@ export const refresh = async (req, res) => {
 // Update user details (Me)
 export const updateMe = async (req, res) => {
     try {
-        const { name, email, phone } = req.body;
+        const { name, email, phone, address, emergencyContact } = req.body;
 
         const user = await User.findByIdAndUpdate(
             req.user.id,
-            { name, email, phone },
+            { name, email, phone, address, emergencyContact },
             { new: true, runValidators: true }
         );
 
