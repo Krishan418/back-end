@@ -47,7 +47,6 @@ export const createOrder = async (req, res) => {
     const finalDeliveryFee = req.body.deliveryFee || 0;
     const finalTotalAmount = Number((finalSubtotal + finalServiceCharge + finalDeliveryFee - discount).toFixed(2));
 
-    // generate a readable order number if not provided
     const orderNumber = req.body.orderNumber || `POS-${Date.now().toString().slice(-6)}`;
 
     const order = await Order.create({
