@@ -209,13 +209,13 @@ export const register = async (req, res) => {
             });
         }
 
-        // Check if user already exists
+        // Check user already exists
         const existingUser = await User.findOne({ email });
         if (existingUser) {
             return res.status(400).json({ success: false, message: 'User already exists' });
         }
 
-        // Create user (password hashed by pre-save hook, role defaults to 'customer')
+        // Create user
         const user = await User.create({
             name,
             email,

@@ -1,7 +1,7 @@
 import WeddingHall from '../models/weddingHall.js';
 import WeddingBooking from '../models/weddingBooking.js';
 
-// Create a new booking - POST /api/wedding/bookings
+// Create a new booking 
 export const createBooking = async (req, res) => {
     try {
         const { 
@@ -48,7 +48,7 @@ export const createBooking = async (req, res) => {
             return res.status(400).json({ success: false, message: `Guest count exceeds hall capacity (${hall.capacity})` });
         }
 
-        // Check for time slot conflicts on same day
+        // Check for time slot conflicts
         const startOfDay = new Date(requestedDate);
         startOfDay.setHours(0, 0, 0, 0);
         const endOfDay = new Date(requestedDate);
@@ -69,7 +69,7 @@ export const createBooking = async (req, res) => {
             return res.status(409).json({ success: false, message: `This hall is already booked from ${overlappingBooking.startTime} to ${overlappingBooking.endTime} on this day.` });
         }
 
-        // --- PRICE CALCULATION (Server-side recalculation for security) ---
+        
         let totalAmount = hall.price;
 
         // Catering cost based on category
@@ -87,7 +87,7 @@ export const createBooking = async (req, res) => {
             });
         }
 
-        // Optional services (different pricing for Wedding vs Event)
+        // Optional services
         const weddingServicePrices = { 'Decorations': 35000, 'DJ/Music': 25000, 'Photography': 40000, 'Videography': 30000, 'Wedding Cake': 20000, 'Lighting System': 20000, 'Flower Arrangements': 15000 };
         const eventServicePrices = { 'Decorations': 10000, 'DJ/Music': 7500, 'Photography': 10000, 'Videography': 8000, 'Celebration Cake': 5000, 'Lighting System': 5000, 'Floral Decor': 3500 };
         const servicePrices = bookingCategory === 'Wedding' ? weddingServicePrices : eventServicePrices;
@@ -120,7 +120,7 @@ export const createBooking = async (req, res) => {
             totalAmount -= (totalAmount * Number(discountPercentage) / 100);
         }
 
-        // Enforce 20% minimum advance payment
+        // 20%  advance payment
         const minAdvance = totalAmount * 0.20;
         const paidAmount = Number(advancePaid);
         if (paidAmount < minAdvance) {
@@ -154,7 +154,7 @@ export const createBooking = async (req, res) => {
     }
 };
 
-// Update full booking - PUT /api/wedding/bookings/:id
+// Update full booking
 export const updateBooking = async (req, res) => {
     try {
         const { id } = req.params;
@@ -172,7 +172,7 @@ export const updateBooking = async (req, res) => {
         const booking = await WeddingBooking.findById(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
-        // Recalculate total (server-side security)
+        // Recalculate total
         let totalAmount = 0;
         const hall = await WeddingHall.findById(hallId);
         if (hall) totalAmount += hall.price;
@@ -238,7 +238,7 @@ export const updateBooking = async (req, res) => {
     }
 };
 
-// Update booking status - PUT /api/wedding/bookings/:id/status
+// Update booking status
 export const updateBookingStatus = async (req, res) => {
     try {
         const { id } = req.params;
@@ -263,7 +263,7 @@ export const updateBookingStatus = async (req, res) => {
     }
 };
 
-// Add payment to booking - PUT /api/wedding/bookings/:id/payment
+// Add payment to booking
 export const addPayment = async (req, res) => {
     try {
         const { id } = req.params;
@@ -294,7 +294,7 @@ export const addPayment = async (req, res) => {
     }
 };
 
-// Update guest count & recalculate total - PUT /api/wedding/bookings/:id/guest-count
+// Update guest count & recalculate total
 export const updateGuestCount = async (req, res) => {
     try {
         const { id } = req.params;
@@ -307,7 +307,7 @@ export const updateGuestCount = async (req, res) => {
         const booking = await WeddingBooking.findById(id).populate('hallId');
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
-        // Recalculate total with new guest count
+        // Recalculate total guest count
         let totalAmount = booking.hallId.price;
         const packagePrices = { 'Silver': 2500, 'Gold': 4000, 'Platinum': 6500 };
         const mealPrices = { 'Breakfast': 800, 'Lunch': 1500, 'Tea Time': 600, 'Dinner': 1800 };
@@ -360,7 +360,7 @@ export const updateGuestCount = async (req, res) => {
     }
 };
 
-// Delete booking - DELETE /api/wedding/bookings/:id
+// Delete booking
 export const deleteBookingRequest = async (req, res) => {
     try {
         const booking = await WeddingBooking.findById(req.params.id);
@@ -373,7 +373,7 @@ export const deleteBookingRequest = async (req, res) => {
     }
 };
 
-// Check hall availability by date - GET /api/wedding/halls/availability?date=YYYY-MM-DD
+// Check hall availability by date
 export const getHallAvailability = async (req, res) => {
     try {
         const { date } = req.query;
@@ -415,7 +415,7 @@ export const getHallAvailability = async (req, res) => {
     }
 };
 
-// Get all bookings - GET /api/wedding/bookings
+// Get all bookings
 export const getAllBookings = async (req, res) => {
     try {
         const bookings = await WeddingBooking.find()
@@ -428,7 +428,7 @@ export const getAllBookings = async (req, res) => {
     }
 };
 
-// Get my bookings - GET /api/wedding/my-bookings
+// Get my bookings
 export const getMyBookings = async (req, res) => {
     try {
         const bookings = await WeddingBooking.find({ customerId: req.user.id })
@@ -439,7 +439,7 @@ export const getMyBookings = async (req, res) => {
     }
 };
 
-// Get all halls - GET /api/wedding/halls
+// Get all halls
 export const getHalls = async (req, res) => {
     try {
         const halls = await WeddingHall.find();
@@ -449,7 +449,7 @@ export const getHalls = async (req, res) => {
     }
 };
 
-// Create hall - POST /api/wedding/halls
+// Create hall
 export const createHall = async (req, res) => {
     try {
         const { hallName, capacity, price, type, status, image } = req.body;
@@ -464,7 +464,7 @@ export const createHall = async (req, res) => {
     }
 };
 
-// Update hall - PUT /api/wedding/halls/:id
+// Update hall
 export const updateHall = async (req, res) => {
     try {
         const { hallName, capacity, price, type, status, image } = req.body;
@@ -476,7 +476,7 @@ export const updateHall = async (req, res) => {
     }
 };
 
-// Delete hall - DELETE /api/wedding/halls/:id
+// Delete hall
 export const deleteHall = async (req, res) => {
     try {
         const hall = await WeddingHall.findById(req.params.id);
@@ -494,7 +494,7 @@ export const deleteHall = async (req, res) => {
     }
 };
 
-// Toggle hall status - PUT /api/wedding/halls/:id/status
+// Toggle hall status
 export const toggleHallStatus = async (req, res) => {
     try {
         const { status } = req.body;
@@ -512,7 +512,7 @@ export const toggleHallStatus = async (req, res) => {
     }
 };
 
-// Get monthly booked dates - GET /api/wedding/halls/booked-dates?year=2026&month=5
+// Get monthly booked dates
 export const getMonthlyBookedDates = async (req, res) => {
     try {
         const { year, month } = req.query;
