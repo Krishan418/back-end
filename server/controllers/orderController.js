@@ -2,7 +2,7 @@ import Order from "../models/order.js";
 import MenuItem from "../models/MenuItem.js"; 
 import Inventory from "../models/inventory.js";
 
-// 1. CREATE ORDER (With Inventory Integration)
+// Create a new order with inventory integration
 export const createOrder = async (req, res) => {
   try {
     const { 
@@ -14,7 +14,6 @@ export const createOrder = async (req, res) => {
     let subtotal = 0;
     const validatedItems = [];
 
-    // Use Promise.all to fetch all menu items
     await Promise.all(items.map(async (item) => {
       const realMenuItem = await MenuItem.findById(item.menuItemId);
       
@@ -41,7 +40,6 @@ export const createOrder = async (req, res) => {
       });
     }));
 
-    // Use values from frontend if provided, otherwise fallback to basic subtotal
     const finalSubtotal = req.body.subtotal || subtotal;
     const finalServiceCharge = req.body.serviceCharge || 0;
     const finalDeliveryFee = req.body.deliveryFee || 0;
@@ -71,12 +69,11 @@ export const createOrder = async (req, res) => {
   }
 };
 
-// 2. GET ORDERS (Filtered by Role)
+// Fetch all orders (filtered by role if necessary)
 export const getOrders = async (req, res) => {
   try {
     let query = {};
     
-    // If not admin/manager/cashier, only show their own orders
     if (req.user && !['admin', 'manager', 'cashier', 'reception', 'receptionist'].includes(req.user.role)) {
       query.customerUser = req.user._id;
     }
@@ -88,7 +85,7 @@ export const getOrders = async (req, res) => {
   }
 };
 
-// 3. UPDATE ORDER (Flexible)
+// Update order details (status, payment, etc.)
 export const updateOrderStatus = async (req, res) => {
   try {
     const order = await Order.findByIdAndUpdate(
@@ -104,7 +101,7 @@ export const updateOrderStatus = async (req, res) => {
   }
 };
 
-// 4. DELETE ORDER
+// Delete an order
 export const deleteOrder = async (req, res) => {
   try {
     const order = await Order.findByIdAndDelete(req.params.id);
@@ -116,7 +113,7 @@ export const deleteOrder = async (req, res) => {
   }
 };
 
-// 5. GET USAGE TRENDS (Analytics)
+// Get item usage trends for analytics
 export const getOrderTrends = async (req, res) => {
   try {
     const trends = await Order.aggregate([
@@ -137,10 +134,9 @@ export const getOrderTrends = async (req, res) => {
   }
 };
 
-// 6. GET ORDERS SUMMARY (for POS dashboard)
+// Get sales summary for the POS dashboard
 export const getOrdersSummary = async (req, res) => {
   try {
-    // Only include orders visible to the user (reuse logic from getOrders)
     let query = {};
     if (req.user && !['admin', 'manager', 'cashier', 'reception', 'receptionist'].includes(req.user.role)) {
       query.customerUser = req.user._id;
@@ -175,4 +171,4 @@ export const getOrdersSummary = async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
-};
+};
