@@ -1,7 +1,7 @@
 import StockLog from "../models/StockLog.js";
 import Inventory from "../models/inventory.js";
 
-// 1. Issue Stock (Morning Allocation)
+// Issue stock for a specific department (e.g., Morning Allocation)
 export const issueStock = async (req, res) => {
   try {
     const { itemId, department, quantity, notes } = req.body;
@@ -13,7 +13,6 @@ export const issueStock = async (req, res) => {
       return res.status(400).json({ message: "Insufficient stock in main store" });
     }
 
-    // Create log
     const log = await StockLog.create({
       item: itemId,
       department,
@@ -22,7 +21,6 @@ export const issueStock = async (req, res) => {
       date: new Date()
     });
 
-    // Deduct from main inventory
     inventoryItem.quantity -= Number(quantity);
     await inventoryItem.save();
 
@@ -32,7 +30,7 @@ export const issueStock = async (req, res) => {
   }
 };
 
-// 2. Settle Stock (Evening Return)
+// Settle stock returns (e.g., Evening Return)
 export const settleStock = async (req, res) => {
   try {
     const { logId, returnedQuantity } = req.body;
@@ -54,7 +52,6 @@ export const settleStock = async (req, res) => {
     log.status = "Settled";
     await log.save();
 
-    // Return unused stock to main inventory
     const inventoryItem = await Inventory.findById(log.item);
     if (inventoryItem) {
       inventoryItem.quantity += retQty;
@@ -67,7 +64,7 @@ export const settleStock = async (req, res) => {
   }
 };
 
-// 3. Get Logs (Filtered by date/department)
+// Fetch stock logs with optional date and department filters
 export const getStockLogs = async (req, res) => {
   try {
     const { date, department } = req.query;

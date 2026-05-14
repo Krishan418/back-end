@@ -1,6 +1,6 @@
 import MenuItem from "../models/MenuItem.js";
 
-// 1. GET ALL ITEMS (Search, Filter, Pagination, Populate)
+// Fetch all menu items with optional filtering and pagination
 export const getMenuItems = async (req, res) => {
   try {
     const { category, search, page, limit, populate } = req.query;
@@ -9,7 +9,6 @@ export const getMenuItems = async (req, res) => {
     if (category) query.category = category;
     if (search) query.name = { $regex: search, $options: "i" };
 
-    // If no page/limit, return all (useful for dropdowns/simple lists)
     if (!page && !limit) {
       let q = MenuItem.find(query).sort({ name: 1 });
       if (populate) q = q.populate(populate);
@@ -38,7 +37,7 @@ export const getMenuItems = async (req, res) => {
   }
 };
 
-// 2. GET SINGLE ITEM
+// Fetch a single menu item by ID
 export const getMenuItemById = async (req, res) => {
   try {
     const item = await MenuItem.findById(req.params.id).lean();
@@ -50,7 +49,7 @@ export const getMenuItemById = async (req, res) => {
   }
 };
 
-// 3. CREATE ITEM
+// Create a new menu item
 export const createMenuItem = async (req, res) => {
   try {
     let { name, category, price, isAvailable, description, inventoryItem, prepTime, hasPortions, portions } = req.body;
@@ -68,7 +67,6 @@ export const createMenuItem = async (req, res) => {
     let parsedPortions = [];
     if (isPortionsEnabled && portions) {
       parsedPortions = typeof portions === "string" ? JSON.parse(portions) : portions;
-      // Convert prices to numbers
       parsedPortions = parsedPortions.map(p => ({ ...p, price: Number(p.price) }));
     }
 
@@ -97,7 +95,7 @@ export const createMenuItem = async (req, res) => {
   }
 };
 
-// 4. UPDATE ITEM
+// Update an existing menu item
 export const updateMenuItem = async (req, res) => {
   try {
     const updateData = { ...req.body };
@@ -110,7 +108,6 @@ export const updateMenuItem = async (req, res) => {
       updateData.hasPortions = updateData.hasPortions === 'true' || updateData.hasPortions === true;
     }
 
-    // Always parse portions if it's a string to prevent Mongoose casting errors
     if (updateData.portions && typeof updateData.portions === "string") {
       try {
         updateData.portions = JSON.parse(updateData.portions);
@@ -126,7 +123,6 @@ export const updateMenuItem = async (req, res) => {
           price: Number(p.price) 
         }));
       }
-      // If portions are enabled, we might want to unset the single price field
     } else {
       updateData.portions = []; 
       if (updateData.price != null) {
@@ -152,7 +148,7 @@ export const updateMenuItem = async (req, res) => {
   }
 };
 
-// 5. DELETE ITEM
+// Delete a menu item
 export const deleteMenuItem = async (req, res) => {
   try {
     const item = await MenuItem.findByIdAndDelete(req.params.id);
@@ -162,4 +158,4 @@ export const deleteMenuItem = async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
-};
+};

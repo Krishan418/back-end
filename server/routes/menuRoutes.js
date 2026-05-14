@@ -8,7 +8,7 @@ import {
 } from "../controllers/menuController.js";
 
 
-//import { verifyToken, authorizeRoles } from "../middleware/authMiddleware.js";
+
 import upload from "../middleware/upload.js"; 
 
 const router = express.Router();
@@ -20,8 +20,6 @@ router.get("/:id", getMenuItemById);
 // Protected Routes (Admin/Manager)
 router.post(
   "/",
-  //verifyToken, 
-  //authorizeRoles("Admin", "Manager"), 
   upload.single("image"), 
   createMenuItem
 );
