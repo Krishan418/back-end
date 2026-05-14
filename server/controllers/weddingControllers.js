@@ -9,9 +9,11 @@ export const createBooking = async (req, res) => {
         const { 
             eventDate, hallId, guestCount,
             eventType, startTime, endTime, 
+            groomName, brideName, nekathTimes, seatingStyle, dietaryNotes, corkageIncluded,
             cateringPackage, selectedMeals = [], optionalServices = [], specialRequests,
             customerName, customerPhone, customerEmail,
-            advancePaid = 0,
+            customerNIC, customerAddress, discountPercentage = 0, complimentaryItems = [],
+            advancePaid = 0, customPackagePrice = 0, customPackageNotes = '',
             bookingCategory = 'Wedding',
             venuePreference = 'Indoor',
             timeSlot = 'Day'
@@ -108,6 +110,8 @@ export const createBooking = async (req, res) => {
             };
             if (packagePrices[cateringPackage]) {
                 totalAmount += packagePrices[cateringPackage] * Number(guestCount);
+            } else if (cateringPackage === 'Custom') {
+                totalAmount += Number(customPackagePrice) * Number(guestCount);
             }
         } else {
             // General Event: Use individual meal prices
@@ -125,15 +129,15 @@ export const createBooking = async (req, res) => {
         }
 
         const weddingServicePrices = {
-            'Decorations': 45000, 'DJ/Music': 35000, 'Photography': 55000,
-            'Videography': 40000, 'Wedding Cake': 25000, 'Lighting System': 30000,
-            'Flower Arrangements': 20000
+            'Decorations': 35000, 'DJ/Music': 25000, 'Photography': 40000,
+            'Videography': 30000, 'Wedding Cake': 20000, 'Lighting System': 20000,
+            'Flower Arrangements': 15000
         };
 
         const eventServicePrices = {
-            'Decorations': 15000, 'DJ/Music': 10000, 'Photography': 15000,
-            'Videography': 12000, 'Wedding Cake': 8000, 'Lighting System': 8000,
-            'Flower Arrangements': 5000
+            'Decorations': 10000, 'DJ/Music': 7500, 'Photography': 10000,
+            'Videography': 8000, 'Celebration Cake': 5000, 'Lighting System': 5000,
+            'Floral Decor': 3500
         };
 
         const servicePrices = bookingCategory === 'Wedding' ? weddingServicePrices : eventServicePrices;
@@ -163,6 +167,11 @@ export const createBooking = async (req, res) => {
             const extraHours = Math.ceil(duration - standardHours);
             totalAmount += extraHours * extraHourPrice;
         }
+
+        // Apply Discount Percentage
+        if (discountPercentage && Number(discountPercentage) > 0) {
+            totalAmount -= (totalAmount * Number(discountPercentage) / 100);
+        }
         // -------------------------
 
         // Enforce 20% minimum advance payment
@@ -190,7 +199,15 @@ export const createBooking = async (req, res) => {
             eventType,
             startTime,
             endTime,
+            groomName,
+            brideName,
+            nekathTimes,
+            seatingStyle,
+            dietaryNotes,
+            corkageIncluded: Boolean(corkageIncluded),
             cateringPackage: bookingCategory === 'Wedding' ? cateringPackage : 'Custom',
+            customPackagePrice: Number(customPackagePrice),
+            customPackageNotes,
             selectedMeals,
             optionalServices,
             specialRequests,
@@ -199,6 +216,10 @@ export const createBooking = async (req, res) => {
             customerName,
             customerPhone,
             customerEmail,
+            customerNIC,
+            customerAddress,
+            discountPercentage: Number(discountPercentage),
+            complimentaryItems,
             bookingCategory,
             timeSlot,
             venuePreference: bookingCategory === 'Wedding' ? 'Indoor' : venuePreference,
@@ -212,6 +233,125 @@ export const createBooking = async (req, res) => {
         return res.status(201).json({
             success: true,
             message: 'Booking request created successfully',
+            data: booking
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// API: Update full booking.
+// Route: PUT /api/wedding/bookings/:id
+export const updateBooking = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { 
+            eventDate, hallId, guestCount,
+            eventType, startTime, endTime, 
+            groomName, brideName, nekathTimes, seatingStyle, dietaryNotes, corkageIncluded,
+            cateringPackage, selectedMeals = [], optionalServices = [], specialRequests,
+            customerName, customerPhone, customerEmail,
+            customerNIC, customerAddress, discountPercentage = 0, complimentaryItems = [],
+            advancePaid, customPackagePrice = 0, customPackageNotes = '',
+            bookingCategory,
+            venuePreference,
+            timeSlot
+        } = req.body;
+
+        const booking = await WeddingBooking.findById(id);
+        if (!booking) {
+            return res.status(404).json({ success: false, message: 'Booking not found' });
+        }
+
+        // Re-calculate Total
+        let totalAmount = 0;
+        const hall = await WeddingHall.findById(hallId);
+        if (hall) {
+            totalAmount += hall.price;
+        }
+
+        const packagePrices = { Silver: 2500, Gold: 4000, Platinum: 6500 };
+        if (bookingCategory === 'Wedding') {
+            if (packagePrices[cateringPackage]) {
+                totalAmount += (packagePrices[cateringPackage] * guestCount);
+            } else if (cateringPackage === 'Custom') {
+                totalAmount += (Number(customPackagePrice) * guestCount);
+            }
+        } else {
+            const mealPrices = { 'Breakfast': 800, 'Lunch': 1500, 'Tea Time': 600, 'Dinner': 1800 };
+            selectedMeals.forEach(meal => {
+                if (mealPrices[meal]) {
+                    totalAmount += (mealPrices[meal] * guestCount);
+                }
+            });
+        }
+
+        const weddingServicePrices = { 'Decorations': 35000, 'DJ/Music': 25000, 'Photography': 40000, 'Videography': 30000, 'Wedding Cake': 20000, 'Lighting System': 20000, 'Flower Arrangements': 15000 };
+        const eventServicePrices = { 'Decorations': 10000, 'DJ/Music': 7500, 'Photography': 10000, 'Videography': 8000, 'Celebration Cake': 5000, 'Lighting System': 5000, 'Floral Decor': 3500 };
+        const servicePrices = bookingCategory === 'Wedding' ? weddingServicePrices : eventServicePrices;
+
+        optionalServices.forEach(service => {
+            if (servicePrices[service]) totalAmount += servicePrices[service];
+        });
+
+        const calculateDuration = (start, end) => {
+            const [sH, sM] = start.split(':').map(Number);
+            const [eH, eM] = end.split(':').map(Number);
+            let diff = (eH + eM/60) - (sH + sM/60);
+            if (diff < 0) diff += 24; 
+            return diff;
+        };
+        const duration = calculateDuration(startTime, endTime);
+        const standardHours = bookingCategory === 'Wedding' ? (timeSlot === 'Day' ? 7 : 6) : 6;
+        const extraHourPrice = bookingCategory === 'Wedding' ? 10000 : 5000;
+        if (duration > standardHours) {
+            totalAmount += Math.ceil(duration - standardHours) * extraHourPrice;
+        }
+
+        if (discountPercentage > 0) totalAmount -= (totalAmount * Number(discountPercentage) / 100);
+
+        // Update fields
+        booking.eventDate = eventDate;
+        booking.hallId = hallId;
+        booking.guestCount = guestCount;
+        booking.eventType = eventType;
+        booking.startTime = startTime;
+        booking.endTime = endTime;
+        booking.groomName = groomName;
+        booking.brideName = brideName;
+        booking.nekathTimes = nekathTimes;
+        booking.seatingStyle = seatingStyle;
+        booking.dietaryNotes = dietaryNotes;
+        booking.corkageIncluded = Boolean(corkageIncluded);
+        booking.cateringPackage = bookingCategory === 'Wedding' ? cateringPackage : 'Custom';
+        booking.customPackagePrice = Number(customPackagePrice);
+        booking.customPackageNotes = customPackageNotes;
+        booking.selectedMeals = selectedMeals;
+        booking.optionalServices = optionalServices;
+        booking.specialRequests = specialRequests;
+        booking.totalAmount = totalAmount;
+        booking.advancePaid = Number(advancePaid);
+        booking.customerName = customerName;
+        booking.customerPhone = customerPhone;
+        booking.customerEmail = customerEmail;
+        booking.customerNIC = customerNIC;
+        booking.customerAddress = customerAddress;
+        booking.discountPercentage = Number(discountPercentage);
+        booking.complimentaryItems = complimentaryItems;
+        booking.bookingCategory = bookingCategory;
+        booking.timeSlot = timeSlot;
+        booking.venuePreference = venuePreference;
+
+        booking.paymentStatus = Number(advancePaid) >= totalAmount ? 'Fully Paid' : (Number(advancePaid) > 0 ? 'Partially Paid' : 'Pending');
+        
+        await booking.save();
+
+        return res.status(200).json({
+            success: true,
+            message: 'Booking updated successfully',
             data: booking
         });
     } catch (error) {
@@ -581,7 +721,7 @@ export const getHalls = async (req, res) => {
 // Admin: Create a new hall/venue
 export const createHall = async (req, res) => {
     try {
-        const { hallName, capacity, price, type, status } = req.body;
+        const { hallName, capacity, price, type, status, image } = req.body;
         
         if (!hallName || !capacity || !price) {
             return res.status(400).json({ success: false, message: 'Please provide hallName, capacity, and price' });
@@ -592,7 +732,8 @@ export const createHall = async (req, res) => {
             capacity,
             price,
             type: type || 'Hall',
-            status: status || 'available'
+            status: status || 'available',
+            image
         });
 
         res.status(201).json({
@@ -608,11 +749,11 @@ export const createHall = async (req, res) => {
 // Admin: Update hall/venue details
 export const updateHall = async (req, res) => {
     try {
-        const { hallName, capacity, price, type, status } = req.body;
+        const { hallName, capacity, price, type, status, image } = req.body;
         
         const hall = await WeddingHall.findByIdAndUpdate(
             req.params.id,
-            { hallName, capacity, price, type, status },
+            { hallName, capacity, price, type, status, image },
             { new: true, runValidators: true }
         );
 
@@ -725,22 +866,6 @@ export const getMonthlyBookedDates = async (req, res) => {
         res.status(200).json({
             success: true,
             data: bookedDates
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-// Admin/Reception: Get all bookings
-export const getAllBookings = async (req, res) => {
-    try {
-        const bookings = await WeddingBooking.find()
-            .populate('hallId', 'hallName capacity price')
-            .sort({ createdAt: -1 });
-
-        res.status(200).json({
-            success: true,
-            data: bookings
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
