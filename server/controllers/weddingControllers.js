@@ -731,18 +731,3 @@ export const getMonthlyBookedDates = async (req, res) => {
     }
 };
 
-// Admin/Reception: Get all bookings
-export const getAllBookings = async (req, res) => {
-    try {
-        const bookings = await WeddingBooking.find()
-            .populate('hallId', 'hallName capacity price')
-            .sort({ createdAt: -1 });
-
-        res.status(200).json({
-            success: true,
-            data: bookings
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
