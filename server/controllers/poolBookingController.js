@@ -1,4 +1,5 @@
 import PoolBooking from '../models/poolBooking.js';
+import { sendPoolBookingSMS } from '../utils/sms.js';
 
 const allowedStatuses = new Set(['Confirmed', 'Checked-In', 'Completed', 'Cancelled']);
 
@@ -41,6 +42,7 @@ export const createPoolBooking = async (req, res) => {
         const {
             guestName,
             guestEmail,
+            guestPhone,
             roomNumber = '',
             date,
             timeSlot,
@@ -50,10 +52,10 @@ export const createPoolBooking = async (req, res) => {
             status = 'Confirmed'
         } = req.body || {};
 
-        if (!guestName || !date || !timeSlot || !checkInTime || !checkOutTime) {
+        if (!guestName || !guestPhone || !date || !timeSlot || !checkInTime || !checkOutTime) {
             return res.status(400).json({
                 success: false,
-                message: 'guestName, date, timeSlot, checkInTime, and checkOutTime are required.'
+                message: 'guestName, guestPhone, date, timeSlot, checkInTime, and checkOutTime are required.'
             });
         }
 
@@ -108,6 +110,7 @@ export const createPoolBooking = async (req, res) => {
         const booking = await PoolBooking.create({
             guestName,
             guestEmail,
+            guestPhone,
             roomNumber,
             date,
             timeSlot,
@@ -117,6 +120,16 @@ export const createPoolBooking = async (req, res) => {
             status: normalizedStatus,
             pricePerPerson: pricePerPerson,
             totalAmount
+        });
+
+        // Trigger SMS confirmation
+        await sendPoolBookingSMS({
+            guestName: booking.guestName,
+            guestPhone: booking.guestPhone,
+            checkInTime: booking.checkInTime,
+            checkOutTime: booking.checkOutTime,
+            numberOfGuests: booking.numberOfGuests,
+            totalAmount: booking.totalAmount
         });
 
         return res.status(201).json({
@@ -153,6 +166,7 @@ export const updatePoolBooking = async (req, res) => {
         const {
             guestName,
             guestEmail,
+            guestPhone,
             roomNumber = '',
             date,
             timeSlot,
@@ -166,7 +180,7 @@ export const updatePoolBooking = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Booking ID is required' });
         }
 
-        const updateData = { guestName, guestEmail, roomNumber, timeSlot };
+        const updateData = { guestName, guestEmail, guestPhone, roomNumber, timeSlot };
         
         if (numberOfGuests !== undefined) {
             const guests = parseGuestCount(numberOfGuests);
