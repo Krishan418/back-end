@@ -1,12 +1,12 @@
 import Order from "../models/order.js";
-import MenuItem from "../models/MenuItem.js"; 
+import MenuItem from "../models/MenuItem.js";
 import Inventory from "../models/inventory.js";
 
 // Create a new order with inventory integration
 export const createOrder = async (req, res) => {
   try {
-    const { 
-      orderType, items, discount = 0, tableNumber, 
+    const {
+      orderType, items, discount = 0, tableNumber,
       roomNumber, deliveryAddress, contactNumber, coordinates,
       customerName, customerUser
     } = req.body;
@@ -16,7 +16,7 @@ export const createOrder = async (req, res) => {
 
     await Promise.all(items.map(async (item) => {
       const realMenuItem = await MenuItem.findById(item.menuItemId);
-      
+
       if (!realMenuItem) {
         throw new Error(`Menu item not found (ID: ${item.menuItemId})`);
       }
@@ -30,12 +30,12 @@ export const createOrder = async (req, res) => {
       }
 
       subtotal += itemPrice * item.quantity;
-      
+
       validatedItems.push({
         menuItemId: realMenuItem._id,
         name: realMenuItem.name,
         portion: item.portion || "",
-        price: itemPrice, 
+        price: itemPrice,
         quantity: item.quantity,
       });
     }));
@@ -48,13 +48,13 @@ export const createOrder = async (req, res) => {
     const orderNumber = req.body.orderNumber || `POS-${Date.now().toString().slice(-6)}`;
 
     const order = await Order.create({
-      orderType, tableNumber, roomNumber, deliveryAddress, 
+      orderType, tableNumber, roomNumber, deliveryAddress,
       contactNumber, coordinates, customerName, customerUser,
-      items: validatedItems, 
-      subtotal: finalSubtotal, 
+      items: validatedItems,
+      subtotal: finalSubtotal,
       serviceCharge: finalServiceCharge,
       deliveryFee: finalDeliveryFee,
-      discount, 
+      discount,
       totalAmount: finalTotalAmount,
       paymentStatus: req.body.paymentStatus || 'Unpaid',
       paymentMethod: req.body.paymentMethod || 'Other',
@@ -73,7 +73,7 @@ export const createOrder = async (req, res) => {
 export const getOrders = async (req, res) => {
   try {
     let query = {};
-    
+
     if (req.user && !['admin', 'manager', 'cashier', 'reception', 'receptionist'].includes(req.user.role)) {
       query.customerUser = req.user._id;
     }
@@ -94,7 +94,7 @@ export const updateOrderStatus = async (req, res) => {
       { new: true, runValidators: true }
     );
     if (!order) return res.status(404).json({ message: "Order not found" });
-    
+
     res.status(200).json(order);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -106,7 +106,7 @@ export const deleteOrder = async (req, res) => {
   try {
     const order = await Order.findByIdAndDelete(req.params.id);
     if (!order) return res.status(404).json({ message: "Order not found" });
-    
+
     res.status(200).json({ message: "Order deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -165,10 +165,10 @@ export const getOrdersSummary = async (req, res) => {
         pending,
         cancelled,
         paymentBreakdown,
-        recent: orders.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)).slice(0,8)
+        recent: orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 8)
       }
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
-};
+};
