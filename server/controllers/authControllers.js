@@ -428,8 +428,9 @@ export const createStaff = async (req, res) => {
             name, email, phone, role, department, salary, joinDate, status,
             nic, employeeId, address, emergencyContact, emergencyContactPhone 
         } = req.body;
+        const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-        if (!name || !email) {
+        if (!name || !normalizedEmail) {
             return res.status(400).json({ success: false, message: 'Name and email are required' });
         }
 
@@ -439,14 +440,14 @@ export const createStaff = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid role for this endpoint' });
         }
 
-        const existing = await User.findOne({ email });
+        const existing = await User.findOne({ email: normalizedEmail });
         if (existing) return res.status(400).json({ success: false, message: 'User already exists' });
 
         const tempPassword = `Staff@${Math.random().toString(36).slice(2,8)}`;
 
         const user = await User.create({
             name,
-            email,
+            email: normalizedEmail,
             password: tempPassword,
             confirmPassword: tempPassword,
             phone,
