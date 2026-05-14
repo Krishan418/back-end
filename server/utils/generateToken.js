@@ -1,7 +1,6 @@
 import jwt from 'jsonwebtoken';
 
-// This function generates an Access Token
-// We set it to 15 minutes as requested
+// Generate Access Token (15 min validity)
 export const generateAccessToken = (userId, role) => {
     return jwt.sign(
         { id: userId, role },
@@ -10,12 +9,11 @@ export const generateAccessToken = (userId, role) => {
     );
 };
 
-// This function generates a Refresh Token
-// We set it to 7 days as requested
+// Generate Refresh Token (7 days validity)
 export const generateRefreshToken = (userId, role) => {
     return jwt.sign(
         { id: userId, role },
-        process.env.JWT_SECRET, // In a real app, you might use a different secret for refresh tokens
-        { expiresIn: '7d' } // 7 days validity
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
     );
 };
