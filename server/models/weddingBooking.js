@@ -34,6 +34,42 @@ const weddingBookingSchema = new mongoose.Schema(
         customerEmail: {
             type: String
         },
+        groomName: {
+            type: String
+        },
+        brideName: {
+            type: String
+        },
+        nekathTimes: {
+            poruwa: { type: String },
+            teaTime: { type: String },
+            lunchDinner: { type: String }
+        },
+        seatingStyle: {
+            type: String,
+            enum: ['Round Tables', 'Theater', 'U-Shape', 'Classroom', 'Cocktail'],
+            default: 'Round Tables'
+        },
+        dietaryNotes: {
+            type: String
+        },
+        corkageIncluded: {
+            type: Boolean,
+            default: false
+        },
+        customerNIC: {
+            type: String
+        },
+        customerAddress: {
+            type: String
+        },
+        discountPercentage: {
+            type: Number,
+            default: 0
+        },
+        complimentaryItems: [{
+            type: String
+        }],
 
         bookingCategory: {
             type: String,
@@ -69,6 +105,14 @@ const weddingBookingSchema = new mongoose.Schema(
             type: String,
             enum: ['Silver', 'Gold', 'Platinum', 'Custom'],
             default: 'Custom'
+        },
+        customPackagePrice: {
+            type: Number,
+            default: 0
+        },
+        customPackageNotes: {
+            type: String,
+            default: ''
         },
 
         // Individual meals selected (for Events)
