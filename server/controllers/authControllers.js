@@ -101,7 +101,96 @@ const getOTPTemplate = (otp, name, hotelName = 'Hotel Janro') => {
 };
 
 
-// Register new user
+const getStaffWelcomeTemplate = (name, role, password, hotelName = 'Hotel Janro') => {
+    return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            .email-container {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                max-width: 600px;
+                margin: 0 auto;
+                background-color: #ffffff;
+                border-radius: 16px;
+                overflow: hidden;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            }
+            .header {
+                background-color: #0F172A;
+                padding: 40px 20px;
+                text-align: center;
+            }
+            .logo-text {
+                color: #D4AF37;
+                font-size: 24px;
+                font-weight: bold;
+                letter-spacing: 4px;
+                margin: 0;
+            }
+            .content {
+                padding: 40px 30px;
+                color: #334155;
+                line-height: 1.6;
+            }
+            .greeting {
+                font-size: 22px;
+                font-weight: 700;
+                color: #0F172A;
+                margin-bottom: 20px;
+                text-align: center;
+            }
+            .info-box {
+                background-color: #F8FAFC;
+                border-left: 4px solid #D4AF37;
+                border-radius: 8px;
+                padding: 25px;
+                margin: 25px 0;
+            }
+            .footer {
+                background-color: #F8FAFC;
+                padding: 20px;
+                text-align: center;
+                font-size: 12px;
+                color: #94A3B8;
+            }
+            .highlight {
+                color: #D4AF37;
+                font-weight: 600;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="email-container">
+            <div class="header">
+                <h1 class="logo-text">${hotelName.toUpperCase()}</h1>
+            </div>
+            <div class="content">
+                <p class="greeting">Congratulations, ${name}!</p>
+                <p>Welcome to the <span class="highlight">${hotelName}</span> team. We are thrilled to have you join us. You have been assigned the role of <strong>${role}</strong>.</p>
+                
+                <div class="info-box">
+                    <p style="margin-top: 0;"><strong>Your Account Credentials:</strong></p>
+                    <p><strong>Email:</strong> ${name}</p>
+                    <p><strong>Temporary Password:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px;">${password}</code></p>
+                </div>
+                
+                <p>Please log in to the admin dashboard using your email and the temporary password provided above. For security reasons, we strongly recommend changing your password immediately after your first login.</p>
+                
+                <p>We look forward to working with you and seeing your contributions to our success!</p>
+            </div>
+            <div class="footer">
+                <p>&copy; ${new Date().getFullYear()} ${hotelName}. All rights reserved.</p>
+                <p>Excellence in Hospitality</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+};
+
+
+// Register new user (always registers as 'customer')
 export const register = async (req, res) => {
     try {
         const { name, email, password, confirmPassword, phone } = req.body;
@@ -197,13 +286,22 @@ export const login = async (req, res) => {
             });
         }
 
-        if (user.status !== 'active') {
+        // Check if user is active (Case-insensitive check)
+        if (user.status && user.status.toLowerCase() !== 'active') {
             return res.status(403).json({
                 success: false,
                 message: 'Your account has been deactivated. Please contact support.'
             });
         }
 
+        // Check if user is verified
+        if (!user.isVerified) {
+            return res.status(401).json({
+                success: false,
+                requireVerification: true,
+                message: 'Please verify your email address before logging in.'
+            });
+        }
 
         // Verify password
         const isPasswordMatch = await user.comparePassword(password);
@@ -460,8 +558,29 @@ export const createStaff = async (req, res) => {
             employeeId,
             address,
             emergencyContact,
-            emergencyContactPhone
+            emergencyContactPhone,
+            isVerified: true
         });
+
+        // Fetch settings for hotel name
+        const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
+        const hotelName = settings.hotelName;
+
+        // Send Welcome email with credentials
+        const message = `Congratulations ${name}! Welcome to the ${hotelName} team as a ${assignedRole}. Your temporary password is: ${tempPassword}`;
+        const html = getStaffWelcomeTemplate(name, assignedRole, tempPassword, hotelName);
+        
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: `Congratulations! Welcome to ${hotelName}`,
+                message,
+                html,
+                hotelName
+            });
+        } catch (error) {
+            console.error("Failed to send staff welcome email", error);
+        }
 
         res.status(201).json({
             success: true,

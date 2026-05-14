@@ -14,6 +14,11 @@ const poolBookingSchema = new mongoose.Schema(
             default: '',
             match: [/^$|^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please provide a valid email if specified']
         },
+        guestPhone: {
+            type: String,
+            required: [true, 'Guest phone number is required for SMS confirmation'],
+            trim: true
+        },
         roomNumber: {
             type: String,
             trim: true,

@@ -72,11 +72,13 @@ const userSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['customer' , 'admin', 'receptionist', 'cashier'],
+        lowercase: true,
+        enum: ['customer', 'manager', 'admin', 'staff', 'receptionist', 'cashier', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance'],
         default: 'customer'
     },
     status: {
         type: String,
+        lowercase: true,
         enum: ['active', 'inactive'],
         default: 'active'
     },
