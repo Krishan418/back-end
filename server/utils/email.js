@@ -14,8 +14,9 @@ const sendEmail = async (options) => {
         });
 
         // 2) Define the email options
+        const hotelName = options.hotelName || 'Hotel Janro';
         const mailOptions = {
-            from: `Hotel Janro <${process.env.EMAIL_FROM}>`,
+            from: `${hotelName} <${process.env.EMAIL_FROM}>`,
             to: options.email,
             subject: options.subject,
             text: options.message,
