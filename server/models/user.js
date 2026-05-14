@@ -87,7 +87,7 @@ userSchema.pre('save', async function() {
     
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
-    this.confirmPassword = undefined; // Remove confirmPassword from db
+    this.confirmPassword = undefined;
 });
 
 // Method to compare passwords
@@ -104,13 +104,13 @@ userSchema.methods.getResetPasswordToken = function() {
     // Generate token
     const resetToken = crypto.randomBytes(20).toString('hex');
 
-    // Hash token and set to resetPasswordToken field
+    
     this.resetPasswordToken = crypto
         .createHash('sha256')
         .update(resetToken)
         .digest('hex');
 
-    // Set expire (10 minutes)
+    // Set expire
     this.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
 
     return resetToken;
