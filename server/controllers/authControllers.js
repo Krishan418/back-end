@@ -3,9 +3,10 @@ import { generateAccessToken, generateRefreshToken } from '../utils/generateToke
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import sendEmail from '../utils/email.js';
+import Settings from '../models/Settings.js';
 
 
-const getOTPTemplate = (otp, name) => {
+const getOTPTemplate = (otp, name, hotelName = 'Hotel Janro') => {
     return `
     <!DOCTYPE html>
     <html>
@@ -75,11 +76,11 @@ const getOTPTemplate = (otp, name) => {
     <body>
         <div class="email-container">
             <div class="header">
-                <h1 class="logo-text">HOTEL JANRO</h1>
+                <h1 class="logo-text">${hotelName.toUpperCase()}</h1>
             </div>
             <div class="content">
                 <p class="greeting">Hello ${name},</p>
-                <p>Welcome to Hotel Janro! We're excited to have you with us. To complete your registration and secure your account, please use the verification code below:</p>
+                <p>Welcome to ${hotelName}! We're excited to have you with us. To complete your registration and secure your account, please use the verification code below:</p>
                 
                 <div class="otp-container">
                     <h2 class="otp-code">${otp}</h2>
@@ -90,7 +91,7 @@ const getOTPTemplate = (otp, name) => {
                 <p class="warning">For your security, never share this code with anyone. Our staff will never ask for your verification code.</p>
             </div>
             <div class="footer">
-                <p>&copy; 2024 Hotel Janro. All rights reserved.</p>
+                <p>&copy; ${new Date().getFullYear()} ${hotelName}. All rights reserved.</p>
                 <p>Luxury & Comfort in Every Stay</p>
             </div>
         </div>
@@ -143,16 +144,21 @@ export const register = async (req, res) => {
         user.verificationOTPExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
         await user.save({ validateBeforeSave: false });
 
+        // Fetch settings for hotel name
+        const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
+        const hotelName = settings.hotelName;
+
         // Send OTP via email
-        const message = `Welcome to Hotel Janro!\n\nYour email verification code is: ${otp}\n\nThis code will expire in 10 minutes.`;
-        const html = getOTPTemplate(otp, user.name);
+        const message = `Welcome to ${hotelName}!\n\nYour email verification code is: ${otp}\n\nThis code will expire in 10 minutes.`;
+        const html = getOTPTemplate(otp, user.name, hotelName);
         
         try {
             await sendEmail({
                 email: user.email,
-                subject: 'Hotel Janro - Verify Your Email',
+                subject: `${hotelName} - Verify Your Email`,
                 message,
-                html
+                html,
+                hotelName
             });
         } catch (error) {
             console.error("Failed to send OTP email", error);
@@ -418,9 +424,13 @@ export const deactivateUser = async (req, res) => {
 // Create staff user (Admin only)
 export const createStaff = async (req, res) => {
     try {
-        const { name, email, phone, role, department, salary, joinDate, status } = req.body;
+        const { 
+            name, email, phone, role, department, salary, joinDate, status,
+            nic, employeeId, address, emergencyContact, emergencyContactPhone 
+        } = req.body;
+        const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-        if (!name || !email) {
+        if (!name || !normalizedEmail) {
             return res.status(400).json({ success: false, message: 'Name and email are required' });
         }
 
@@ -430,14 +440,14 @@ export const createStaff = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid role for this endpoint' });
         }
 
-        const existing = await User.findOne({ email });
+        const existing = await User.findOne({ email: normalizedEmail });
         if (existing) return res.status(400).json({ success: false, message: 'User already exists' });
 
         const tempPassword = `Staff@${Math.random().toString(36).slice(2,8)}`;
 
         const user = await User.create({
             name,
-            email,
+            email: normalizedEmail,
             password: tempPassword,
             confirmPassword: tempPassword,
             phone,
@@ -445,7 +455,12 @@ export const createStaff = async (req, res) => {
             department,
             salary,
             joinDate,
-            status: status || 'active'
+            status: status || 'active',
+            nic,
+            employeeId,
+            address,
+            emergencyContact,
+            emergencyContactPhone
         });
 
         res.status(201).json({
@@ -459,7 +474,12 @@ export const createStaff = async (req, res) => {
                 department: user.department,
                 salary: user.salary,
                 joinDate: user.joinDate,
-                status: user.status
+                status: user.status,
+                nic: user.nic,
+                employeeId: user.employeeId,
+                address: user.address,
+                emergencyContact: user.emergencyContact,
+                emergencyContactPhone: user.emergencyContactPhone
             }
         });
     } catch (error) {
@@ -470,7 +490,10 @@ export const createStaff = async (req, res) => {
 // Update user details (Admin only)
 export const updateUser = async (req, res) => {
     try {
-        const allowed = ['name', 'phone', 'role', 'department', 'salary', 'joinDate', 'status', 'email'];
+        const allowed = [
+            'name', 'phone', 'role', 'department', 'salary', 'joinDate', 'status', 'email',
+            'nic', 'employeeId', 'address', 'emergencyContact', 'emergencyContactPhone'
+        ];
         const updates = {};
         for (const key of allowed) {
             if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -496,7 +519,12 @@ export const updateUser = async (req, res) => {
             department: user.department,
             salary: user.salary,
             joinDate: user.joinDate,
-            status: user.status
+            status: user.status,
+            nic: user.nic,
+            employeeId: user.employeeId,
+            address: user.address,
+            emergencyContact: user.emergencyContact,
+            emergencyContactPhone: user.emergencyContactPhone
         }});
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -569,11 +597,16 @@ export const forgotPassword = async (req, res) => {
 
         const message = `You are receiving this email because you (or someone else) has requested the reset of a password. Please make a PUT request to: \n\n ${resetUrl}`;
 
+        // Fetch settings for hotel name
+        const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
+        const hotelName = settings.hotelName;
+
         try {
             await sendEmail({
                 email: user.email,
-                subject: 'Hotel Janro - Password Reset Token',
-                message
+                subject: `${hotelName} - Password Reset Token`,
+                message,
+                hotelName
             });
 
             res.status(200).json({ success: true, message: 'Email sent' });
@@ -705,15 +738,21 @@ export const resendOTP = async (req, res) => {
         user.verificationOTPExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
         await user.save({ validateBeforeSave: false });
 
-        const message = `Welcome to Hotel Janro!\n\nYour new email verification code is: ${otp}\n\nThis code will expire in 10 minutes.`;
-        const html = getOTPTemplate(otp, user.name);
+        // Fetch settings for hotel name
+        const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
+        const hotelName = settings.hotelName;
+
+        // Send OTP via email
+        const message = `Welcome to ${hotelName}!\n\nYour new email verification code is: ${otp}\n\nThis code will expire in 10 minutes.`;
+        const html = getOTPTemplate(otp, user.name, hotelName);
         
         try {
             await sendEmail({
                 email: user.email,
-                subject: 'Hotel Janro - Verify Your Email',
+                subject: `${hotelName} - Verify Your Email`,
                 message,
-                html
+                html,
+                hotelName
             });
 
             res.status(200).json({ success: true, message: 'A new verification code has been sent to your email.' });
