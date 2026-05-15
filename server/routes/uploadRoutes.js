@@ -5,7 +5,7 @@ const router = express.Router();
 
 // @desc    Upload a single file
 // @route   POST /api/upload
-// @access  Private (You can add auth middleware here if needed)
+// @access  Private 
 router.post('/', upload.single('image'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ success: false, message: 'No file uploaded' });

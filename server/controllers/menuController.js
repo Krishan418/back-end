@@ -3,11 +3,13 @@ import MenuItem from "../models/MenuItem.js";
 // View menu items with filter and pagination.
 export const getMenuItems = async (req, res) => {
   try {
-    const { category, search, page, limit, populate } = req.query;
+    const { category, search, page, limit, populate, isAvailable } = req.query;
     let query = {};
 
     if (category) query.category = category;
     if (search) query.name = { $regex: search, $options: "i" };
+    if (isAvailable !== undefined) query.isAvailable = isAvailable === "true";
+
 
     if (!page && !limit) {
       let q = MenuItem.find(query).sort({ name: 1 });

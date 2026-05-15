@@ -92,14 +92,72 @@ export const getOrders = async (req, res) => {
 // Update order status or payment
 export const updateOrderStatus = async (req, res) => {
   try {
-    const order = await Order.findByIdAndUpdate(
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    // Check if the user is a customer
+    const isStaff = ['admin', 'manager', 'cashier', 'reception', 'receptionist'].includes(req.user?.role);
+    
+    if (!isStaff) {
+      // Check if it's their own order
+      if (order.customerUser && order.customerUser.toString() !== req.user?._id.toString()) {
+        return res.status(403).json({ message: "You can only edit your own orders" });
+      }
+
+      // Check the 5-minute limit (only for items update, not for status updates by staff)
+      // If req.body contains items, it's an edit
+      if (req.body.items) {
+        const diffInMinutes = (Date.now() - new Date(order.createdAt).getTime()) / (1000 * 60);
+        if (diffInMinutes > 5) {
+          return res.status(400).json({ message: "Order cannot be edited after 5 minutes" });
+        }
+        
+        if (order.orderStatus !== 'Pending') {
+          return res.status(400).json({ message: "Only pending orders can be edited" });
+        }
+
+        // Recalculate totals if items are changed
+        let subtotal = 0;
+        const validatedItems = [];
+
+        await Promise.all(req.body.items.map(async (item) => {
+          const realMenuItem = await MenuItem.findById(item.menuItemId);
+          if (!realMenuItem) throw new Error(`Menu item not found: ${item.menuItemId}`);
+
+          let itemPrice = realMenuItem.price;
+          if (realMenuItem.hasPortions && item.portion) {
+            const selectedPortion = realMenuItem.portions.find(p => p.portionType === item.portion);
+            if (selectedPortion) itemPrice = selectedPortion.price;
+          }
+
+          subtotal += itemPrice * item.quantity;
+          validatedItems.push({
+            menuItemId: realMenuItem._id,
+            name: realMenuItem.name,
+            portion: item.portion || "",
+            price: itemPrice,
+            quantity: item.quantity,
+          });
+        }));
+
+        req.body.items = validatedItems;
+        req.body.subtotal = subtotal;
+        
+        // Recalculate totalAmount based on existing charges
+        const serviceCharge = order.serviceCharge || 0;
+        const deliveryFee = order.deliveryFee || 0;
+        const discount = order.discount || 0;
+        req.body.totalAmount = Number((subtotal + serviceCharge + deliveryFee - discount).toFixed(2));
+      }
+    }
+
+    const updatedOrder = await Order.findByIdAndUpdate(
       req.params.id,
       { $set: req.body },
       { new: true, runValidators: true }
     );
-    if (!order) return res.status(404).json({ message: "Order not found" });
 
-    res.status(200).json(order);
+    res.status(200).json(updatedOrder);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

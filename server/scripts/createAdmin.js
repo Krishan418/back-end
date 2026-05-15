@@ -1,23 +1,15 @@
 
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import path from 'path';
-import dns from 'dns';
 import User from '../models/user.js';
+import dns from 'dns';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
-
+dotenv.config({ path: './.env' });
 dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
 const createAdmin = async () => {
     try {
-        const mongoUri = process.env.MONGO_URI;
-        if (!mongoUri) throw new Error('MONGO_URI not found in env');
-        
-        await mongoose.connect(mongoUri);
+        await mongoose.connect(process.env.MONGO_URI);
         console.log('Connected to MongoDB');
 
         const adminEmail = 'admin@hoteljanro.com';
@@ -25,12 +17,7 @@ const createAdmin = async () => {
 
         const existingAdmin = await User.findOne({ email: adminEmail });
         if (existingAdmin) {
-            console.log('Admin already exists. Resetting password and ensuring verified status...');
-            existingAdmin.password = adminPassword;
-            existingAdmin.confirmPassword = adminPassword;
-            existingAdmin.isVerified = true;
-            await existingAdmin.save({ validateBeforeSave: false });
-            console.log('Admin updated successfully!');
+            console.log('Admin already exists');
             process.exit(0);
         }
 
@@ -40,8 +27,6 @@ const createAdmin = async () => {
             email: adminEmail,
             password: adminPassword,
             confirmPassword: adminPassword,
-            isVerified: true,
-            role: 'admin'
             role: 'admin',
             phone: '0000000000'
         });
