@@ -36,6 +36,6 @@ dist/
 # Misc
 *.tgz
 
-# Uploads
+# Uploads (keep folder structure, ignore uploaded files)
 uploads/*
 !uploads/.gitkeep
