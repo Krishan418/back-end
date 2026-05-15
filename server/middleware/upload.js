@@ -1,44 +1,41 @@
-let upload;
+import { v2 as cloudinary } from 'cloudinary';
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
+import multer from 'multer';
+import dotenv from 'dotenv';
 
-try {
-  const multerModule = await import("multer");
-  const multer = multerModule.default;
+dotenv.config();
 
-  // Define the storage location and file naming convention for uploaded photos
-  const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-      // Save uploaded photos to the 'uploads/' directory
-      cb(null, "uploads/");
-    },
-    filename: (req, file, cb) => {
-      // Append the current timestamp to the original filename to prevent naming conflicts
-      cb(null, `${Date.now()}-${file.originalname}`);
-    },
-  });
+// Configure Cloudinary with credentials from .env
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
-  // Filter to ensure only image files are accepted
-  const fileFilter = (req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only image files are allowed!"), false);
-    }
-  };
+// Define Cloudinary storage settings
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'hotel_janro_menu', // Folder name in Cloudinary
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+    transformation: [{ width: 1000, height: 1000, crop: 'limit' }], // Optional: auto-resize
+  },
+});
 
-  upload = multer({
-    storage,
-    fileFilter,
-    // Restrict file size to a maximum of 5MB to prevent server overload
-    limits: { fileSize: 5 * 1024 * 1024 },
-  });
-} catch (error) {
-  console.warn("Multer not installed. File upload routes will run without file handling.");
-  upload = {
-    single: () => (req, res, next) => next(),
-    array: () => (req, res, next) => next(),
-    fields: () => (req, res, next) => next(),
-    none: () => (req, res, next) => next(),
-  };
-}
+// Filter to ensure only image files are accepted
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith("image/")) {
+    cb(null, true);
+  } else {
+    cb(new Error("Only image files are allowed!"), false);
+  }
+};
+
+// Create the multer upload instance
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+});
 
 export default upload;

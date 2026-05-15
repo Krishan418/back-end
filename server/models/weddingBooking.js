@@ -1,58 +1,68 @@
 import mongoose from 'mongoose';
 
-// This schema stores booking transactions.
-// It maps directly to the requested `weddingBookings` collection.
+// Wedding Booking Schema - stores all booking transactions
 const weddingBookingSchema = new mongoose.Schema(
     {
-        // Date of the wedding/event for this booking.
-        eventDate: {
-            type: Date,
-            required: [true, 'Event date is required']
+        // Event details
+        eventDate: { type: Date, required: [true, 'Event date is required'] },
+        hallId: { type: mongoose.Schema.Types.ObjectId, ref: 'WeddingHall', required: [true, 'Hall ID is required'] },
+        customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
+
+        // Customer details
+        customerName: { type: String, required: [true, 'Customer name is required'] },
+        customerPhone: { type: String, required: [true, 'Customer phone is required'] },
+        customerEmail: { type: String },
+        customerNIC: { type: String },
+        customerAddress: { type: String },
+
+        // Wedding-specific fields
+        groomName: { type: String },
+        brideName: { type: String },
+        nekathTimes: {
+            poruwa: { type: String },
+            teaTime: { type: String },
+            lunchDinner: { type: String }
         },
 
-        // Reference to the hall document in `weddingHalls`.
-        hallId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'WeddingHall',
-            required: [true, 'Hall ID is required']
-        },
-        customerId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User',
-            required: [true, 'Customer ID is required']
-        },
+        // Event configuration
+        seatingStyle: { type: String, enum: ['Round Tables', 'Theater', 'U-Shape', 'Classroom', 'Cocktail'], default: 'Round Tables' },
+        dietaryNotes: { type: String },
+        corkageIncluded: { type: Boolean, default: false },
+        bookingCategory: { type: String, enum: ['Wedding', 'Event'], default: 'Wedding' },
+        venuePreference: { type: String, enum: ['Indoor', 'Outdoor'], default: 'Indoor' },
+        eventType: { type: String, enum: ['Wedding', 'Engagement', 'Reception', 'Birthday Party', 'Anniversary', 'Corporate Meeting', 'Other'], required: [true, 'Event type is required'] },
+        timeSlot: { type: String, enum: ['Day', 'Night'], default: 'Day' },
+        startTime: { type: String, required: [true, 'Start time is required'] },
+        endTime: { type: String, required: [true, 'End time is required'] },
 
-        // Package selected by the customer.
-        packageType: {
-            type: String,
-            required: [true, 'Package type is required'],
-            trim: true
-        },
+        // Catering - Wedding packages OR Event individual meals
+        cateringPackage: { type: String, enum: ['Silver', 'Gold', 'Platinum', 'Custom'], default: 'Custom' },
+        customPackagePrice: { type: Number, default: 0 },
+        customPackageNotes: { type: String, default: '' },
+        selectedMeals: [{ type: String }],
 
-        // Number of guests expected.
-        guestCount: {
-            type: Number,
-            required: [true, 'Guest count is required'],
-            min: [1, 'Guest count must be at least 1']
-        },
+        // Guest & services
+        guestCount: { type: Number, required: [true, 'Guest count is required'], min: [1, 'Guest count must be at least 1'] },
+        optionalServices: [{ type: String }],
+        specialRequests: { type: String },
 
-        // Current workflow state of the booking.
-        bookingStatus: {
-            type: String,
-            enum: ['pending', 'confirmed', 'cancelled', 'rejected'],
-            default: 'pending'
-        }
+        // Financial
+        discountPercentage: { type: Number, default: 0 },
+        complimentaryItems: [{ type: String }],
+        totalAmount: { type: Number, required: true, default: 0 },
+        advancePaid: { type: Number, required: true, default: 0, min: [0, 'Advance payment cannot be negative'] },
+        paymentStatus: { type: String, enum: ['Pending', 'Partially Paid', 'Fully Paid'], default: 'Pending' },
+
+        // Booking workflow
+        bookingStatus: { type: String, enum: ['pending', 'confirmed', 'cancelled', 'rejected'], default: 'pending' }
     },
     {
-        // Keep createdAt and updatedAt automatically.
         timestamps: true,
-
-        // Force the exact MongoDB collection name requested by you.
         collection: 'weddingBookings'
     }
 );
 
-// Helpful index to speed up availability checks by date + hall.
+// Index for fast availability lookups
 weddingBookingSchema.index({ eventDate: 1, hallId: 1 });
 
 export default mongoose.model('WeddingBooking', weddingBookingSchema);

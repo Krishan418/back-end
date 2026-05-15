@@ -88,6 +88,7 @@ const userSchema = new mongoose.Schema({
     },
     verificationOTP: String,
     verificationOTPExpire: Date,
+    pendingEmail: String,
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     createdAt: {
