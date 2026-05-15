@@ -104,7 +104,7 @@ export const getMyBookings = async (req, res) => {
 		});
 	}
 };
-
+		//This function gets a booking by ID and returns an error if it is not found.
 export const getBookingById = async (req, res) => {
 	try {
 		const booking = await Booking.findById(req.params.id)

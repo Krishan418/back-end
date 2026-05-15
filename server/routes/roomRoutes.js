@@ -10,14 +10,15 @@ import {
     restoreRoom,
     updateRoomAvailability
 } from '../controllers/roomController.js';
+
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
-const router = express.Router();
+const router = express.Router(); //Creates a mini routing system for rooms
 
-router.get('/admin/list', protect, authorize('admin', 'manager'), getAdminRooms);
+router.get('/admin/list', protect, authorize('admin', 'manager'), getAdminRooms); //Get all rooms (admin view)
 router.get('/admin/stats', protect, authorize('admin', 'manager'), getRoomAdminStats);
 
-router.get('/', getRooms);
+router.get('/', getRooms);//Anyone can view available rooms 
 router.get('/:id', getRoomById);
 
 router.post('/', protect, authorize('admin', 'manager'), createRoom);

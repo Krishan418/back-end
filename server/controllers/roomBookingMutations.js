@@ -9,7 +9,7 @@ import {
 
 export const createBooking = async (req, res) => {
 	try {
-		// Read booking input from request body.
+		// New booking create.
 		const {
 			roomId,
 			checkInDate,
@@ -21,9 +21,11 @@ export const createBooking = async (req, res) => {
 			specialRequests,
 			decorationItems,
 			checkInType,
-			checkOutType
+			checkOutType,
+			stayMode
 		} = req.body;
 
+		//Required Fields Validation
 		if (!roomId || !checkInDate || !checkOutDate || !guests || !fullName || !email) {
 			return res.status(400).json({
 				success: false,
@@ -43,12 +45,19 @@ export const createBooking = async (req, res) => {
 		// Calculate total slots (Day=0, Night=1)
 		// Day = date * 2, Night = date * 2 + 1
 		const startMs = new Date(checkInDate).getTime();
-		const endMs = new Date(checkOutDate).getTime();
-		
 		const startIndex = (Math.floor(startMs / (1000 * 60 * 60 * 24)) * 2) + (checkInType === 'Night' ? 1 : 0);
-		const endIndex = (Math.floor(endMs / (1000 * 60 * 60 * 24)) * 2) + (checkOutType === 'Night' ? 1 : 0);
-		
-		const slots = Math.max(1, endIndex - startIndex + 1);
+
+		let endIndex, slots;
+		if (stayMode === 'onlyDay' || stayMode === 'onlyNight') {
+			// Single-period stays: exactly 1 slot, endIndex = startIndex
+			endIndex = startIndex;
+			slots = 1;
+		} else {
+			// Custom multi-day calculation
+			const endMs = new Date(checkOutDate).getTime();
+			endIndex = (Math.floor(endMs / (1000 * 60 * 60 * 24)) * 2) + (checkOutType === 'Night' ? 1 : 0);
+			slots = Math.max(1, endIndex - startIndex + 1);
+		}
 
 		const normalizedEmail = String(email).trim().toLowerCase();
 		const overlapOrConditions = [{ email: normalizedEmail }];
@@ -91,7 +100,7 @@ export const createBooking = async (req, res) => {
 			}
 		}
 
-		// If global counter is still used, decrement it.
+		// When the booking is confirmed, reduce the available room count.
 		if (room.availableRooms > 0) {
 			room.availableRooms -= 1;
 			await room.save();
@@ -105,6 +114,7 @@ export const createBooking = async (req, res) => {
 		// Price calculation logic: (Base Price * Slots) + Decoration Total
 		const totalPrice = (room.price * slots) + decorationTotal;
 
+		//Save in the booking database.
 		const booking = await Booking.create({
 			room: room._id,
 			user: req.user?._id || null,
