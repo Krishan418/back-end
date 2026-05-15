@@ -34,7 +34,7 @@ router.put('/resetpassword/:resettoken', resetPassword);
 router.post('/verify-email', verifyEmail);
 router.post('/resend-otp', resendOTP);
 
-// Protected routes (any logged-in user)
+// Protected routes
 router.get('/me', protect, getMe);
 router.put('/updateme', protect, updateMe);
 router.put('/updatepassword', protect, updatePassword);

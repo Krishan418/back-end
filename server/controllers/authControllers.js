@@ -190,7 +190,7 @@ const getStaffWelcomeTemplate = (name, role, password, hotelName = 'Hotel Janro'
 };
 
 
-// Register new user (always registers as 'customer')
+// Register new user
 export const register = async (req, res) => {
     try {
         const { name, email, password, confirmPassword, phone } = req.body;
@@ -266,7 +266,7 @@ export const register = async (req, res) => {
     }
 };
 
-// Login user - verify credentials and return JWT tokens
+// Login user
 export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -286,7 +286,7 @@ export const login = async (req, res) => {
             });
         }
 
-        // Check if user is active (Case-insensitive check)
+        // Check if user is active 
         if (user.status && user.status.toLowerCase() !== 'active') {
             return res.status(403).json({
                 success: false,
@@ -413,7 +413,7 @@ export const updateUserRole = async (req, res) => {
     }
 };
 
-// Refresh access token using refresh token
+// Refresh access token 
 export const refresh = async (req, res) => {
     try {
         const { refreshToken } = req.body;

@@ -7,7 +7,7 @@ export const createBooking = async (req, res) => {
         const { 
             eventDate, hallId, guestCount,
             eventType, startTime, endTime, 
-            groomName, brideName, nekathTimes, seatingStyle, dietaryNotes, corkageIncluded,
+            groomName, groomPhone, brideName, bridePhone, nekathTimes, seatingStyle, dietaryNotes, corkageIncluded,
             cateringPackage, selectedMeals = [], optionalServices = [], specialRequests,
             customerName, customerPhone, customerEmail,
             customerNIC, customerAddress, discountPercentage = 0, complimentaryItems = [],
@@ -133,7 +133,7 @@ export const createBooking = async (req, res) => {
 
         const booking = new WeddingBooking({
             eventDate: requestedDate, hallId, guestCount, eventType, startTime, endTime,
-            groomName, brideName, nekathTimes, seatingStyle, dietaryNotes,
+            groomName, groomPhone, brideName, bridePhone, nekathTimes, seatingStyle, dietaryNotes,
             corkageIncluded: Boolean(corkageIncluded),
             cateringPackage: bookingCategory === 'Wedding' ? cateringPackage : 'Custom',
             customPackagePrice: Number(customPackagePrice), customPackageNotes,
@@ -161,7 +161,7 @@ export const updateBooking = async (req, res) => {
         const { 
             eventDate, hallId, guestCount,
             eventType, startTime, endTime, 
-            groomName, brideName, nekathTimes, seatingStyle, dietaryNotes, corkageIncluded,
+            groomName, groomPhone, brideName, bridePhone, nekathTimes, seatingStyle, dietaryNotes, corkageIncluded,
             cateringPackage, selectedMeals = [], optionalServices = [], specialRequests,
             customerName, customerPhone, customerEmail,
             customerNIC, customerAddress, discountPercentage = 0, complimentaryItems = [],
@@ -219,7 +219,7 @@ export const updateBooking = async (req, res) => {
         // Update all fields
         Object.assign(booking, {
             eventDate, hallId, guestCount, eventType, startTime, endTime,
-            groomName, brideName, nekathTimes, seatingStyle, dietaryNotes,
+            groomName, groomPhone, brideName, bridePhone, nekathTimes, seatingStyle, dietaryNotes,
             corkageIncluded: Boolean(corkageIncluded),
             cateringPackage: bookingCategory === 'Wedding' ? cateringPackage : 'Custom',
             customPackagePrice: Number(customPackagePrice), customPackageNotes,

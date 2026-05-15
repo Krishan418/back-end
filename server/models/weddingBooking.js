@@ -17,7 +17,9 @@ const weddingBookingSchema = new mongoose.Schema(
 
         // Wedding-specific fields
         groomName: { type: String },
+        groomPhone: { type: String },
         brideName: { type: String },
+        bridePhone: { type: String },
         nekathTimes: {
             poruwa: { type: String },
             teaTime: { type: String },
@@ -30,7 +32,17 @@ const weddingBookingSchema = new mongoose.Schema(
         corkageIncluded: { type: Boolean, default: false },
         bookingCategory: { type: String, enum: ['Wedding', 'Event'], default: 'Wedding' },
         venuePreference: { type: String, enum: ['Indoor', 'Outdoor'], default: 'Indoor' },
-        eventType: { type: String, enum: ['Wedding', 'Engagement', 'Reception', 'Birthday Party', 'Anniversary', 'Corporate Meeting', 'Other'], required: [true, 'Event type is required'] },
+        eventType: { 
+            type: String, 
+            enum: [
+                'Wedding', 'Wedding Reception', 'Homecoming', 'Engagement Ceremony', 
+                'Birthday Party', 'Birthday Celebration', 'Anniversary Party', 
+                'Puberty Ceremony', 'Corporate Meeting / Seminar', 'Conference / Workshop', 
+                'Company Annual Party', 'Product Launch', 'Graduation Ceremony', 
+                'School / Alumni Reunion', 'Musical Show / Concert', 'Other'
+            ], 
+            required: [true, 'Event type is required'] 
+        },
         timeSlot: { type: String, enum: ['Day', 'Night'], default: 'Day' },
         startTime: { type: String, required: [true, 'Start time is required'] },
         endTime: { type: String, required: [true, 'End time is required'] },
