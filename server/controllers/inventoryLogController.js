@@ -1,7 +1,7 @@
 import StockLog from "../models/StockLog.js";
 import Inventory from "../models/inventory.js";
 
-// Issue stock for a specific department (e.g., Morning Allocation)
+// Issue stock for a specific department
 export const issueStock = async (req, res) => {
   try {
     const { itemId, department, quantity, notes } = req.body;
@@ -30,7 +30,7 @@ export const issueStock = async (req, res) => {
   }
 };
 
-// Settle stock returns (e.g., Evening Return)
+// Settle stock returns
 export const settleStock = async (req, res) => {
   try {
     const { logId, returnedQuantity } = req.body;

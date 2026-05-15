@@ -1,6 +1,6 @@
 import Inventory from "../models/inventory.js";
 
-// Fetch all inventory items
+// Get all inventory items
 export const getInventory = async (req, res) => {
   try {
     const items = await Inventory.find().sort({ createdAt: -1 }).lean();
@@ -10,7 +10,7 @@ export const getInventory = async (req, res) => {
   }
 };
 
-// Create a new inventory item
+// Create new inventory item
 export const createInventoryItem = async (req, res) => {
   try {
     const item = await Inventory.create(req.body);
@@ -20,7 +20,7 @@ export const createInventoryItem = async (req, res) => {
   }
 };
 
-// Update an existing inventory item
+// Update inventory item
 export const updateInventoryItem = async (req, res) => {
   try {
     const item = await Inventory.findByIdAndUpdate(req.params.id, req.body, {
@@ -34,7 +34,7 @@ export const updateInventoryItem = async (req, res) => {
   }
 };
 
-// Delete an inventory item
+// Remove inventory item
 export const deleteInventoryItem = async (req, res) => {
   try {
     const item = await Inventory.findByIdAndDelete(req.params.id);
@@ -45,7 +45,7 @@ export const deleteInventoryItem = async (req, res) => {
   }
 };
 
-// Get items that have reached or dropped below threshold
+// Get items with low stock levels
 export const getLowStockItems = async (req, res) => {
   try {
     const items = await Inventory.find({
@@ -57,7 +57,7 @@ export const getLowStockItems = async (req, res) => {
   }
 };
 
-// Issue stock for specific purposes (Restaurant/Wedding)
+// Manual stock issue (Restaurant/Events)
 export const issueStock = async (req, res) => {
   try {
     const { items, purpose } = req.body; 
@@ -80,7 +80,7 @@ export const issueStock = async (req, res) => {
   }
 };
 
-// Reconcile remaining stock at the end of operations
+// Update stock counts at end of day
 export const reconcileEndOfDay = async (req, res) => {
   try {
     const { items } = req.body; 

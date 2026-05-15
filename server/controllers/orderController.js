@@ -2,7 +2,7 @@ import Order from "../models/order.js";
 import MenuItem from "../models/MenuItem.js";
 import Inventory from "../models/inventory.js";
 
-// Create a new order with inventory integration
+// Create new order
 export const createOrder = async (req, res) => {
   try {
     const {
@@ -14,6 +14,7 @@ export const createOrder = async (req, res) => {
     let subtotal = 0;
     const validatedItems = [];
 
+    // Validate each menu item
     await Promise.all(items.map(async (item) => {
       const realMenuItem = await MenuItem.findById(item.menuItemId);
 
@@ -40,6 +41,7 @@ export const createOrder = async (req, res) => {
       });
     }));
 
+    // Calculate final totals
     const finalSubtotal = req.body.subtotal || subtotal;
     const finalServiceCharge = req.body.serviceCharge || 0;
     const finalDeliveryFee = req.body.deliveryFee || 0;
@@ -47,6 +49,7 @@ export const createOrder = async (req, res) => {
 
     const orderNumber = req.body.orderNumber || `POS-${Date.now().toString().slice(-6)}`;
 
+    // Save order to database
     const order = await Order.create({
       orderType, tableNumber, roomNumber, deliveryAddress,
       contactNumber, coordinates, customerName, customerUser,
@@ -69,11 +72,12 @@ export const createOrder = async (req, res) => {
   }
 };
 
-// Fetch all orders (filtered by role if necessary)
+// Get all orders
 export const getOrders = async (req, res) => {
   try {
     let query = {};
 
+    // Filter by customer if not admin/staff
     if (req.user && !['admin', 'manager', 'cashier', 'reception', 'receptionist'].includes(req.user.role)) {
       query.customerUser = req.user._id;
     }
@@ -85,7 +89,7 @@ export const getOrders = async (req, res) => {
   }
 };
 
-// Update order details (status, payment, etc.)
+// Update order status or payment
 export const updateOrderStatus = async (req, res) => {
   try {
     const order = await Order.findByIdAndUpdate(
@@ -101,7 +105,7 @@ export const updateOrderStatus = async (req, res) => {
   }
 };
 
-// Delete an order
+// Remove order
 export const deleteOrder = async (req, res) => {
   try {
     const order = await Order.findByIdAndDelete(req.params.id);
@@ -113,7 +117,7 @@ export const deleteOrder = async (req, res) => {
   }
 };
 
-// Get item usage trends for analytics
+// Get item popularity trends
 export const getOrderTrends = async (req, res) => {
   try {
     const trends = await Order.aggregate([
@@ -134,7 +138,7 @@ export const getOrderTrends = async (req, res) => {
   }
 };
 
-// Get sales summary for the POS dashboard
+// Get sales analytics summary
 export const getOrdersSummary = async (req, res) => {
   try {
     let query = {};
@@ -144,11 +148,13 @@ export const getOrdersSummary = async (req, res) => {
 
     const orders = await Order.find(query).lean();
 
+    // Aggregate statistics
     const totalSales = orders.reduce((s, o) => s + (o.totalAmount || 0), 0);
     const completed = orders.filter(o => (o.orderStatus || '').toLowerCase() === 'completed').length;
     const pending = orders.filter(o => (o.orderStatus || '').toLowerCase() === 'pending').length;
     const cancelled = orders.filter(o => (o.orderStatus || '').toLowerCase() === 'cancelled').length;
 
+    // Payment method breakdown
     const paymentMap = {};
     orders.forEach(o => {
       const m = o.paymentMethod || 'Other';

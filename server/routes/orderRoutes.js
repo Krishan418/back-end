@@ -13,7 +13,7 @@ import rateLimit from 'express-rate-limit';
 
 const orderLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 15, // Max 15 orders per IP per 10 mins
+  max: 25,//Max 25 orders per IP per 10 mins
   message: { message: "Too many orders from this IP. Please wait before ordering again." }
 });
 
