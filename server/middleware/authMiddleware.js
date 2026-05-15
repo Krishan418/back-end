@@ -20,6 +20,14 @@ export const protect = async (req, res, next) => {
                 });
             }
 
+            // Check if user is active
+            if (req.user.status && req.user.status !== 'active') {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Your account is inactive. Please contact admin.'
+                });
+            }
+
             next();
         } catch (error) {
             return res.status(401).json({ 
