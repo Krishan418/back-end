@@ -87,8 +87,13 @@ export const getMonthlyRevenueReport = async (req, res) => {
 
 export const getMyBookings = async (req, res) => {
 	try {
-		// Returns bookings for logged-in user only.
-		const bookings = await Booking.find({ user: req.user._id })
+		const normalizedEmail = String(req.user.email).trim().toLowerCase();
+		const bookings = await Booking.find({
+			$or: [
+				{ user: req.user._id },
+				{ email: normalizedEmail }
+			]
+		})
 			.populate('room', 'name price image')
 			.sort({ createdAt: -1 });
 

@@ -553,7 +553,13 @@ export const getAllBookings = async (req, res) => {
 // Get current user's wedding bookings
 export const getMyBookings = async (req, res) => {
     try {
-        const bookings = await WeddingBooking.find({ customerId: req.user.id })
+        const normalizedEmail = String(req.user.email).trim().toLowerCase();
+        const bookings = await WeddingBooking.find({
+            $or: [
+                { customerId: req.user._id },
+                { customerEmail: normalizedEmail }
+            ]
+        })
             .populate('hallId', 'hallName capacity');
 
         res.status(200).json({

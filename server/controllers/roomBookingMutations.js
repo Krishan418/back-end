@@ -300,3 +300,85 @@ export const deleteBooking = async (req, res) => {
 		});
 	}
 };
+
+export const updateBookingDetails = async (req, res) => {
+	try {
+		const booking = await Booking.findById(req.params.id);
+		if (!booking) {
+			return res.status(404).json({
+				success: false,
+				message: 'Booking not found'
+			});
+		}
+
+		// Authorization: Admin/Staff can always edit. Owner can edit ONLY if check-in is >= 3 days away.
+		const isStaff = ['admin', 'manager', 'receptionist', 'reception'].includes(req.user.role);
+		const isOwner = booking.user && booking.user.toString() === req.user._id.toString();
+
+		if (!isStaff && !isOwner) {
+			return res.status(403).json({
+				success: false,
+				message: 'Not authorized to edit this booking'
+			});
+		}
+
+		if (!isStaff) {
+			// Enforce 3 days policy for customer
+			const checkInDate = new Date(booking.checkInDate);
+			const diffTime = checkInDate.getTime() - Date.now();
+			const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+			if (diffDays < 3) {
+				return res.status(400).json({
+					success: false,
+					message: 'Bookings can only be edited at least 3 days prior to check-in.'
+				});
+			}
+		}
+
+		// Fields we can update
+		const {
+			fullName,
+			phone,
+			guests,
+			specialRequests,
+			decorationItems
+		} = req.body;
+
+		if (fullName) booking.fullName = fullName;
+		if (phone) booking.phone = phone;
+		if (specialRequests !== undefined) booking.specialRequests = specialRequests;
+
+		// Handle guests change
+		if (guests) {
+			booking.guests = guests;
+		}
+
+		// Handle decorations update (only for honeymoon suite)
+		const room = await Room.findById(booking.room);
+		if (room && decorationItems) {
+			const supportsDecorations = String(room.name || '').toLowerCase().includes('honeymoon');
+			const sanitizedDecorationItems = supportsDecorations ? sanitizeDecorationItems(decorationItems) : [];
+			const decorationTotal = calculateDecorationTotal(sanitizedDecorationItems);
+			
+			// Recalculate price: (Base Price * Slots) + Decoration Total
+			const basePrice = room.price;
+			const slots = booking.nights || 1;
+			booking.totalPrice = (basePrice * slots) + decorationTotal;
+			booking.decorationItems = sanitizedDecorationItems;
+		}
+
+		await booking.save();
+
+		const updatedBooking = await Booking.findById(booking._id).populate('room', 'name price image');
+		res.status(200).json({
+			success: true,
+			message: 'Booking updated successfully',
+			data: updatedBooking
+		});
+	} catch (error) {
+		res.status(500).json({
+			success: false,
+			message: error.message
+		});
+	}
+};
