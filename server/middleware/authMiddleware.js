@@ -20,8 +20,8 @@ export const protect = async (req, res, next) => {
                 });
             }
 
-            // Check if user is active
-            if (req.user.status && req.user.status !== 'active') {
+            // Check if user is active (Case-insensitive)
+            if (req.user.status && req.user.status.toLowerCase() !== 'active') {
                 return res.status(403).json({
                     success: false,
                     message: 'Your account is inactive. Please contact admin.'

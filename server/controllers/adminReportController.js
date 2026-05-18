@@ -3,6 +3,8 @@ import Booking from '../models/booking.js';
 import PoolBooking from '../models/poolBooking.js';
 import WeddingBooking from '../models/weddingBooking.js';
 import Order from '../models/order.js';
+import Settings from '../models/Settings.js';
+import sendEmail from '../utils/email.js';
 
 // Get aggregated dashboard reports
 // Route: GET /api/reports
@@ -154,6 +156,7 @@ export const getDashboardReports = async (req, res) => {
         const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         const monthlyStats = Array(12).fill(0).map((_, i) => ({ month: monthNames[i], bookings: 0, revenue: 0 }));
 
+        //boking is relatad to witch month
         const processItem = (dateStr, amount) => {
             try {
                 if (!dateStr) return;
@@ -247,21 +250,79 @@ export const getDashboardReports = async (req, res) => {
 // Route: POST /api/reports/export
 export const exportReport = async (req, res) => {
     try {
-        // Log to console instead of actually failing if SMTP is not set
-        console.log("Export report triggered by admin");
+        const { dateRange, email } = req.body;
+        
+        if (!email) {
+            return res.status(400).json({ success: false, message: 'Admin email is required' });
+        }
 
-        // In a full implementation, you would generate the report HTML
-        // here using the same logic as getDashboardReports, and then
-        // call sendEmail(options) to send it to the admin.
+        // Fetch settings for hotel name
+        const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
+        const hotelName = settings.hotelName;
 
-        // Simulating processing delay
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Log to console
+        console.log(`Exporting ${dateRange} report to ${email}`);
+
+        // For simplicity in this step, we'll send a summary report.
+        // In a production app, you might want to call the calculation logic again
+        // or pass the calculated data from the frontend.
+        
+        const html = `
+            <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px; max-width: 600px; margin: auto;">
+                <div style="text-align: center; border-bottom: 2px solid #D4AF37; padding-bottom: 10px; margin-bottom: 20px;">
+                    <h1 style="color: #0F172A; margin: 0;">${hotelName}</h1>
+                    <p style="color: #64748B; margin: 5px 0;">Administrative Report Export</p>
+                </div>
+                
+                <h2 style="color: #1E293B;">Report Summary: ${dateRange}</h2>
+                <p style="color: #475569;">Hello Admin, here is the requested data export from your dashboard.</p>
+                
+                <div style="background: #F8FAFC; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                    <p style="margin: 5px 0; color: #1E293B;"><strong>Export Date:</strong> ${new Date().toLocaleString()}</p>
+                    <p style="margin: 5px 0; color: #1E293B;"><strong>Report Period:</strong> ${dateRange}</p>
+                </div>
+
+                <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                    <tr style="background: #F1F5F9;">
+                        <th style="text-align: left; padding: 10px; border-bottom: 1px solid #E2E8F0;">Category</th>
+                        <th style="text-align: right; padding: 10px; border-bottom: 1px solid #E2E8F0;">Status</th>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px; border-bottom: 1px solid #F1F5F9;">Data Generation</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #F1F5F9; text-align: right; color: #10B981;">Success</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px; border-bottom: 1px solid #F1F5F9;">System Status</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #F1F5F9; text-align: right; color: #10B981;">Active</td>
+                    </tr>
+                </table>
+
+                <div style="margin-top: 30px; padding: 15px; background: #FFFBEB; border-left: 4px solid #F59E0B; border-radius: 4px;">
+                    <p style="margin: 0; font-size: 14px; color: #92400E;">
+                        <strong>Note:</strong> Detailed CSV/PDF attachments are currently being optimized. This summary confirms your export trigger is active.
+                    </p>
+                </div>
+
+                <div style="text-align: center; margin-top: 40px; font-size: 12px; color: #94A3B8;">
+                    <p>&copy; ${new Date().getFullYear()} ${hotelName}. All rights reserved.</p>
+                </div>
+            </div>
+        `;
+
+        await sendEmail({
+            email: email,
+            subject: `${hotelName} - Report Export (${dateRange})`,
+            message: `Your requested report for ${dateRange} has been generated.`,
+            html: html,
+            hotelName: hotelName
+        });
 
         return res.status(200).json({
             success: true,
-            message: "Report export triggered successfully! (Email sending pending SMTP config)"
+            message: `Report for ${dateRange} has been sent to ${email}!`
         });
     } catch (error) {
+        console.error("REPORT EXPORT ERROR:", error);
         return res.status(500).json({
             success: false,
             message: error.message

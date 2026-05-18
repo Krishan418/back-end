@@ -429,10 +429,8 @@ export const refresh = async (req, res) => {
             return res.status(401).json({ success: false, message: 'User not found' });
         }
 
-<<<<<<< HEAD
         // Generate a new Access Token (50 min)
-=======
->>>>>>> 132daa6bfc2ebe4ba6732d6eb502509f0d460dcc
+
         const newAccessToken = generateAccessToken(user._id, user.role);
 
         res.status(200).json({
@@ -528,12 +526,31 @@ export const createStaff = async (req, res) => {
     try {
         const { 
             name, email, phone, role, department, salary, joinDate, status,
-            nic, employeeId, address, emergencyContact, emergencyContactPhone 
+            nic, employeeId, address, emergencyContact, emergencyContactPhone,
+            employmentType, hourlyRate, startTime, endTime, additionalHours
         } = req.body;
         const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
         if (!name || !normalizedEmail) {
             return res.status(400).json({ success: false, message: 'Name and email are required' });
+        }
+
+        // Email Validation
+        const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+        if (!emailRegex.test(normalizedEmail)) {
+            return res.status(400).json({ success: false, message: 'Please provide a valid email address' });
+        }
+
+        // Phone Validation (Exactly 10 digits)
+        const phoneRegex = /^\d{10}$/;
+        if (phone && !phoneRegex.test(phone)) {
+            return res.status(400).json({ success: false, message: 'Phone number must be exactly 10 digits' });
+        }
+
+        // NIC Validation (9 digits + V/X or 12 digits)
+        const nicRegex = /^(?:\d{9}[vVxX]|\d{12})$/;
+        if (nic && !nicRegex.test(nic)) {
+            return res.status(400).json({ success: false, message: 'Invalid NIC format. Use 9 digits + V/X or 12 digits' });
         }
 
         const allowedRoles = ['staff', 'manager', 'receptionist', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance'];
@@ -563,6 +580,11 @@ export const createStaff = async (req, res) => {
             address,
             emergencyContact,
             emergencyContactPhone,
+            employmentType: employmentType || 'permanent',
+            hourlyRate: hourlyRate || 0,
+            startTime,
+            endTime,
+            additionalHours: additionalHours || 0,
             isVerified: true
         });
 
@@ -602,7 +624,12 @@ export const createStaff = async (req, res) => {
                 employeeId: user.employeeId,
                 address: user.address,
                 emergencyContact: user.emergencyContact,
-                emergencyContactPhone: user.emergencyContactPhone
+                emergencyContactPhone: user.emergencyContactPhone,
+                employmentType: user.employmentType,
+                hourlyRate: user.hourlyRate,
+                startTime: user.startTime,
+                endTime: user.endTime,
+                additionalHours: user.additionalHours
             }
         });
     } catch (error) {
@@ -615,11 +642,36 @@ export const updateUser = async (req, res) => {
     try {
         const allowed = [
             'name', 'phone', 'role', 'department', 'salary', 'joinDate', 'status', 'email',
-            'nic', 'employeeId', 'address', 'emergencyContact', 'emergencyContactPhone'
+            'nic', 'employeeId', 'address', 'emergencyContact', 'emergencyContactPhone',
+            'employmentType', 'hourlyRate', 'startTime', 'endTime', 'additionalHours'
         ];
         const updates = {};
         for (const key of allowed) {
             if (req.body[key] !== undefined) updates[key] = req.body[key];
+        }
+
+        // Email Validation if being updated
+        if (updates.email) {
+            const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+            if (!emailRegex.test(updates.email)) {
+                return res.status(400).json({ success: false, message: 'Please provide a valid email address' });
+            }
+        }
+
+        // Phone Validation if being updated
+        if (updates.phone) {
+            const phoneRegex = /^\d{10}$/;
+            if (!phoneRegex.test(updates.phone)) {
+                return res.status(400).json({ success: false, message: 'Phone number must be exactly 10 digits' });
+            }
+        }
+
+        // NIC Validation if being updated
+        if (updates.nic) {
+            const nicRegex = /^(?:\d{9}[vVxX]|\d{12})$/;
+            if (!nicRegex.test(updates.nic)) {
+                return res.status(400).json({ success: false, message: 'Invalid NIC format' });
+            }
         }
 
         const user = await User.findById(req.params.id);
@@ -647,7 +699,12 @@ export const updateUser = async (req, res) => {
             employeeId: user.employeeId,
             address: user.address,
             emergencyContact: user.emergencyContact,
-            emergencyContactPhone: user.emergencyContactPhone
+            emergencyContactPhone: user.emergencyContactPhone,
+            employmentType: user.employmentType,
+            hourlyRate: user.hourlyRate,
+            startTime: user.startTime,
+            endTime: user.endTime,
+            additionalHours: user.additionalHours
         }});
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });

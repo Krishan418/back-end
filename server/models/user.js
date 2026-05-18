@@ -67,6 +67,27 @@ const userSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    employmentType: {
+        type: String,
+        enum: ['permanent', 'temporary'],
+        default: 'permanent'
+    },
+    hourlyRate: {
+        type: Number,
+        default: 0
+    },
+    startTime: {
+        type: String,
+        trim: true
+    },
+    endTime: {
+        type: String,
+        trim: true
+    },
+    additionalHours: {
+        type: Number,
+        default: 0
+    },
     joinDate: {
         type: Date
     },
