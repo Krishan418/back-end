@@ -1,6 +1,7 @@
 import Order from "../models/order.js";
 import MenuItem from "../models/MenuItem.js";
 import Inventory from "../models/inventory.js";
+import { broadcastEvent } from "../utils/socket.js";
 
 // Create new order
 export const createOrder = async (req, res) => {
@@ -65,6 +66,8 @@ export const createOrder = async (req, res) => {
       balance: req.body.balance || 0,
       orderNumber,
     });
+
+    broadcastEvent("orderCreated", order);
 
     res.status(201).json(order);
   } catch (error) {
@@ -157,6 +160,8 @@ export const updateOrderStatus = async (req, res) => {
       { new: true, runValidators: true }
     );
 
+    broadcastEvent("orderUpdated", updatedOrder);
+
     res.status(200).json(updatedOrder);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -168,6 +173,8 @@ export const deleteOrder = async (req, res) => {
   try {
     const order = await Order.findByIdAndDelete(req.params.id);
     if (!order) return res.status(404).json({ message: "Order not found" });
+
+    broadcastEvent("orderDeleted", { id: req.params.id });
 
     res.status(200).json({ message: "Order deleted successfully" });
   } catch (error) {

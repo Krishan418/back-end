@@ -23,7 +23,7 @@ router.post("/", orderLimiter, createOrder);
 router.get("/", protect, getOrders);
 router.get("/summary", protect, authorize("admin", "manager", "cashier"), getOrdersSummary);
 router.get("/trends", protect, authorize("admin", "manager"), getOrderTrends);
-router.put("/:id", protect, authorize("admin", "manager", "cashier"), updateOrderStatus);
+router.put("/:id", protect, authorize("admin", "manager", "cashier", "customer"), updateOrderStatus);
 router.delete("/:id", protect, authorize("admin"), deleteOrder);
 
 export default router;
