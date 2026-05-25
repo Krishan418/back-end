@@ -7,7 +7,7 @@ export const createBooking = async (req, res) => {
         const { 
             eventDate, hallId, guestCount,
             eventType, startTime, endTime, 
-            groomName, brideName, nekathTimes, seatingStyle, dietaryNotes, corkageIncluded,
+            groomName, groomPhone, brideName, bridePhone, nekathTimes, seatingStyle, dietaryNotes, corkageIncluded,
             cateringPackage, selectedMeals = [], optionalServices = [], specialRequests,
             customerName, customerPhone, customerEmail,
             customerNIC, customerAddress, discountPercentage = 0, complimentaryItems = [],
@@ -133,7 +133,7 @@ export const createBooking = async (req, res) => {
 
         const booking = new WeddingBooking({
             eventDate: requestedDate, hallId, guestCount, eventType, startTime, endTime,
-            groomName, brideName, nekathTimes, seatingStyle, dietaryNotes,
+            groomName, groomPhone, brideName, bridePhone, nekathTimes, seatingStyle, dietaryNotes,
             corkageIncluded: Boolean(corkageIncluded),
             cateringPackage: bookingCategory === 'Wedding' ? cateringPackage : 'Custom',
             customPackagePrice: Number(customPackagePrice), customPackageNotes,
@@ -161,7 +161,7 @@ export const updateBooking = async (req, res) => {
         const { 
             eventDate, hallId, guestCount,
             eventType, startTime, endTime, 
-            groomName, brideName, nekathTimes, seatingStyle, dietaryNotes, corkageIncluded,
+            groomName, groomPhone, brideName, bridePhone, nekathTimes, seatingStyle, dietaryNotes, corkageIncluded,
             cateringPackage, selectedMeals = [], optionalServices = [], specialRequests,
             customerName, customerPhone, customerEmail,
             customerNIC, customerAddress, discountPercentage = 0, complimentaryItems = [],
@@ -219,7 +219,7 @@ export const updateBooking = async (req, res) => {
         // Update all fields
         Object.assign(booking, {
             eventDate, hallId, guestCount, eventType, startTime, endTime,
-            groomName, brideName, nekathTimes, seatingStyle, dietaryNotes,
+            groomName, groomPhone, brideName, bridePhone, nekathTimes, seatingStyle, dietaryNotes,
             corkageIncluded: Boolean(corkageIncluded),
             cateringPackage: bookingCategory === 'Wedding' ? cateringPackage : 'Custom',
             customPackagePrice: Number(customPackagePrice), customPackageNotes,
@@ -289,72 +289,6 @@ export const addPayment = async (req, res) => {
 
         await booking.save();
         return res.status(200).json({ success: true, message: 'Payment added successfully', data: booking });
-    } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-// Update guest count & recalculate total
-export const updateGuestCount = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { guestCount } = req.body;
-
-        if (!guestCount || Number(guestCount) < 1) {
-            return res.status(400).json({ success: false, message: 'Valid guest count is required' });
-        }
-
-        const booking = await WeddingBooking.findById(id).populate('hallId');
-        if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
-
-        // Recalculate total guest count
-        let totalAmount = booking.hallId.price;
-        const packagePrices = { 'Silver': 2500, 'Gold': 4000, 'Platinum': 6500 };
-        const mealPrices = { 'Breakfast': 800, 'Lunch': 1500, 'Tea Time': 600, 'Dinner': 1800 };
-        
-        const weddingServicePrices = { 'Decorations': 45000, 'DJ/Music': 35000, 'Photography': 55000, 'Videography': 40000, 'Wedding Cake': 25000, 'Lighting System': 30000, 'Flower Arrangements': 20000 };
-        const eventServicePrices = { 'Decorations': 15000, 'DJ/Music': 10000, 'Photography': 15000, 'Videography': 12000, 'Wedding Cake': 8000, 'Lighting System': 8000, 'Flower Arrangements': 5000 };
-
-        if (booking.bookingCategory === 'Wedding') {
-            if (booking.cateringPackage && packagePrices[booking.cateringPackage]) {
-                totalAmount += packagePrices[booking.cateringPackage] * Number(guestCount);
-            }
-        } else {
-            booking.selectedMeals.forEach(meal => {
-                totalAmount += (mealPrices[meal] || 0) * Number(guestCount);
-            });
-        }
-
-        const servicePrices = booking.bookingCategory === 'Wedding' ? weddingServicePrices : eventServicePrices;
-        booking.optionalServices.forEach(s => { totalAmount += servicePrices[s] || 0; });
-
-        // Extra hour charges
-        const calculateDuration = (start, end) => {
-            const [sH, sM] = start.split(':').map(Number);
-            const [eH, eM] = end.split(':').map(Number);
-            let diff = (eH + eM/60) - (sH + sM/60);
-            if (diff < 0) diff += 24; 
-            return diff;
-        };
-
-        const duration = calculateDuration(booking.startTime, booking.endTime);
-        const standardHours = booking.bookingCategory === 'Wedding' ? (booking.timeSlot === 'Day' ? 7 : 6) : 6;
-        const extraHourPrice = booking.bookingCategory === 'Wedding' ? 10000 : 5000;
-
-        if (duration > standardHours) {
-            totalAmount += Math.ceil(duration - standardHours) * extraHourPrice;
-        }
-
-        booking.guestCount = Number(guestCount);
-        booking.totalAmount = totalAmount;
-
-        // Update payment status
-        if (booking.advancePaid >= booking.totalAmount) booking.paymentStatus = 'Fully Paid';
-        else if (booking.advancePaid > 0) booking.paymentStatus = 'Partially Paid';
-        else booking.paymentStatus = 'Pending';
-
-        await booking.save();
-        return res.status(200).json({ success: true, message: 'Guest count and total updated', data: booking });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
     }
