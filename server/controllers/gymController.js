@@ -20,7 +20,7 @@ export const createGymPass = async (req, res) => {
       });
     }
 
-    // Generate validDate
+    // Generate valid Date
     const validDate = new Date();
     validDate.setDate(validDate.getDate() + Number(validDays));
 

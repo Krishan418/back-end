@@ -892,7 +892,7 @@ export const verifyEmail = async (req, res) => {
     }
 };
 
-// Resend Verification OTP
+// Resend Verification  OTP
 export const resendOTP = async (req, res) => {
     try {
         const { email } = req.body;

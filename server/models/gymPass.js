@@ -15,6 +15,7 @@ const gymPassSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  
   guestPhone: {
     type: String,
     required: true
