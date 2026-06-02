@@ -46,8 +46,8 @@ export const protect = async (req, res, next) => {
     }
 };
 
-// Authorize by role - pass allowed roles as arguments
-// Usage: authorize('admin', 'manager')
+
+// authorize('admin', 'manager')
 export const authorize = (...roles) => {
     return (req, res, next) => {
         if (!req.user) {

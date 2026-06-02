@@ -1,6 +1,6 @@
 import Inventory from "../models/inventory.js";
 
-// 1. GET ALL INVENTORY
+// Fetch all inventory items
 export const getInventory = async (req, res) => {
   try {
     const items = await Inventory.find().sort({ createdAt: -1 }).lean();
@@ -10,7 +10,7 @@ export const getInventory = async (req, res) => {
   }
 };
 
-// 2. CREATE INVENTORY ITEM
+// Create a new inventory item
 export const createInventoryItem = async (req, res) => {
   try {
     const item = await Inventory.create(req.body);
@@ -20,7 +20,7 @@ export const createInventoryItem = async (req, res) => {
   }
 };
 
-// 3. UPDATE INVENTORY ITEM
+// Update an existing inventory item
 export const updateInventoryItem = async (req, res) => {
   try {
     const item = await Inventory.findByIdAndUpdate(req.params.id, req.body, {
@@ -34,7 +34,7 @@ export const updateInventoryItem = async (req, res) => {
   }
 };
 
-// 4. DELETE INVENTORY ITEM
+// Delete an inventory item
 export const deleteInventoryItem = async (req, res) => {
   try {
     const item = await Inventory.findByIdAndDelete(req.params.id);
@@ -45,7 +45,7 @@ export const deleteInventoryItem = async (req, res) => {
   }
 };
 
-// 5. GET LOW STOCK ITEMS (Alerts)
+// Get items that have reached or dropped below threshold
 export const getLowStockItems = async (req, res) => {
   try {
     const items = await Inventory.find({
@@ -57,14 +57,9 @@ export const getLowStockItems = async (req, res) => {
   }
 };
 
-// ==========================================
-// NEW PERIODIC INVENTORY LOGIC
-// ==========================================
-
-// 6. ISSUE STOCK (Morning dispatch to Restaurant or Wedding)
+// Issue stock for specific purposes (Restaurant/Wedding)
 export const issueStock = async (req, res) => {
   try {
-    // req.body.items pattern: [{ id: "...", qty: 5 }]
     const { items, purpose } = req.body; 
 
     await Promise.all(items.map(async (reqItem) => {
@@ -85,17 +80,15 @@ export const issueStock = async (req, res) => {
   }
 };
 
-// 7. END OF DAY RECONCILIATION (Night balance update)
+// Reconcile remaining stock at the end of operations
 export const reconcileEndOfDay = async (req, res) => {
   try {
-    // req.body.items pattern: [{ id: "...", remainingQty: 3 }]
     const { items } = req.body; 
 
     await Promise.all(items.map(async (reqItem) => {
       const inventoryItem = await Inventory.findById(reqItem.id);
       
       if (inventoryItem) {
-        // Sets the database quantity directly to the physical remaining quantity
         inventoryItem.quantity = reqItem.remainingQty;
         await inventoryItem.save();
       }
@@ -105,4 +98,4 @@ export const reconcileEndOfDay = async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
-};
+};

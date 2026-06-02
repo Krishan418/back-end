@@ -23,7 +23,7 @@ const paymentSchema = new mongoose.Schema({
     referenceId: {
         type: mongoose.Schema.Types.ObjectId,
         required: true,
-        // This could be a RoomBooking, WeddingBooking, or Order ID
+        // RoomBooking, WeddingBooking, Order ID
         refPath: 'onModel'
     },
     onModel: {

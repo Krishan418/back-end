@@ -7,7 +7,6 @@ const orderSchema = new mongoose.Schema(
       enum: ["Dine-in", "Room", "Delivery", "Take-away"],
       required: true,
     },
-    // Newly added fields (filled based on the order type)
     tableNumber: { type: String }, 
     roomNumber: { type: String }, 
     deliveryAddress: { type: String }, 

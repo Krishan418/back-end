@@ -6,8 +6,8 @@ const menuItemSchema = new mongoose.Schema(
       type: String, 
       required: true, 
       trim: true,
-      unique: true, // Block Duplicate Food Names
-      index: true   // Speed Search
+      unique: true,
+      index: true
     },
     category: { 
       type: String, 
@@ -18,7 +18,7 @@ const menuItemSchema = new mongoose.Schema(
     },
     price: { 
       type: Number, 
-      required: function() { return !this.hasPortions; }, // Only required if no portions
+      required: function() { return !this.hasPortions; },
       min: [0, "Price cannot be negative"] 
     },
     hasPortions: {
