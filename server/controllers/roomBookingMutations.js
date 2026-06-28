@@ -7,6 +7,44 @@ import {
 	calculateDecorationTotal
 } from './roombookinghekpers.js';
 
+const isAcRoom = (roomName, specialRequests) => {
+  const norm = (roomName || '').toLowerCase().replace(/[^a-z]/g, '');
+  if (norm.includes('family')) {
+    if (specialRequests && String(specialRequests).toLowerCase().includes('non-ac')) {
+      return false;
+    }
+    return true;
+  }
+  return !norm.includes('nonac');
+};
+
+const getRoomOptionPrice = (roomName, isAc, stayMode) => {
+  const norm = (roomName || '').toLowerCase().replace(/[^a-z]/g, '');
+  const isFamily = norm.includes('family');
+  const isHoneymoon = norm.includes('honeymoon') || norm.includes('wedding');
+
+  if (isFamily) {
+    if (isAc) {
+      return stayMode === 'onlyNight' ? 6750 : 8750;
+    } else {
+      return stayMode === 'onlyNight' ? 5500 : 6750;
+    }
+  } else if (isHoneymoon) {
+    return 9500;
+  } else {
+    // Standard Room
+    if (isAc) {
+      if (stayMode === 'onlyDay') return 6000;
+      if (stayMode === 'onlyNight') return 5500;
+      return 8500; // 24 hours
+    } else {
+      if (stayMode === 'onlyDay') return 4000;
+      if (stayMode === 'onlyNight') return 4500;
+      return 7500; // 24 hours
+    }
+  }
+};
+
 export const createBooking = async (req, res) => {
 	try {
 		// New booking create.
@@ -112,7 +150,9 @@ export const createBooking = async (req, res) => {
 		const decorationTotal = calculateDecorationTotal(sanitizedDecorationItems);
 
 		// Price calculation logic: (Base Price * Slots) + Decoration Total
-		const totalPrice = (room.price * slots) + decorationTotal;
+		const isAc = isAcRoom(room.name, specialRequests);
+		const basePrice = getRoomOptionPrice(room.name, isAc, stayMode);
+		const totalPrice = (basePrice * slots) + decorationTotal;
 
 		//Save in the booking database.
 		const booking = await Booking.create({
@@ -361,7 +401,8 @@ export const updateBookingDetails = async (req, res) => {
 			const decorationTotal = calculateDecorationTotal(sanitizedDecorationItems);
 			
 			// Recalculate price: (Base Price * Slots) + Decoration Total
-			const basePrice = room.price;
+			const isAc = isAcRoom(room.name, booking.specialRequests);
+			const basePrice = getRoomOptionPrice(room.name, isAc, booking.stayMode);
 			const slots = booking.nights || 1;
 			booking.totalPrice = (basePrice * slots) + decorationTotal;
 			booking.decorationItems = sanitizedDecorationItems;
