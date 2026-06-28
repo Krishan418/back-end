@@ -43,6 +43,22 @@ const userSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
+    emergencyContactPhone: {
+        type: String,
+        trim: true
+    },
+    nic: {
+        type: String,
+        unique: true,
+        sparse: true,
+        trim: true
+    },
+    employeeId: {
+        type: String,
+        unique: true,
+        sparse: true,
+        trim: true
+    },
     department: {
         type: String,
         trim: true
@@ -56,17 +72,24 @@ const userSchema = new mongoose.Schema({
     },
     role: {
         type: String,
+        lowercase: true,
         enum: ['customer', 'manager', 'admin', 'staff', 'receptionist', 'cashier', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance'],
         default: 'customer'
     },
     status: {
         type: String,
+        lowercase: true,
         enum: ['active', 'inactive'],
         default: 'active'
     },
     isVerified: {
         type: Boolean,
         default: false
+    },
+    googleId: {
+        type: String,
+        unique: true,
+        sparse: true
     },
     verificationOTP: String,
     verificationOTPExpire: Date,
@@ -87,7 +110,7 @@ userSchema.pre('save', async function() {
     
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
-    this.confirmPassword = undefined; // Remove confirmPassword from db
+    this.confirmPassword = undefined;
 });
 
 // Method to compare passwords
@@ -104,13 +127,13 @@ userSchema.methods.getResetPasswordToken = function() {
     // Generate token
     const resetToken = crypto.randomBytes(20).toString('hex');
 
-    // Hash token and set to resetPasswordToken field
+    
     this.resetPasswordToken = crypto
         .createHash('sha256')
         .update(resetToken)
         .digest('hex');
 
-    // Set expire (10 minutes)
+    // Set expire
     this.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
 
     return resetToken;

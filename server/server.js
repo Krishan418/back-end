@@ -1,5 +1,7 @@
-import express from "express";
 import dotenv from "dotenv";
+dotenv.config();
+
+import express from "express";
 import cors from "cors";
 import dns from "dns";
 import path from "path";
@@ -17,11 +19,10 @@ import helmet from 'helmet';
 import poolBookingRoutes from "./routes/poolBookingRoutes.js";
 import settingsRoutes from "./routes/settingsRoutes.js";
 import adminReportRoutes from "./routes/adminReportRoutes.js";
+import uploadRoutes from "./routes/uploadRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-dotenv.config();
 
 // Use Google DNS to resolve MongoDB Atlas SRV records
 dns.setServers(["8.8.8.8", "8.8.4.4"]);
@@ -61,6 +62,7 @@ app.use("/api/inventory", inventoryRoutes);
 app.use("/api/pool-bookings", poolBookingRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/reports", adminReportRoutes);
+app.use("/api/upload", uploadRoutes);
 
 // Global error handler
 app.use((err, req, res, next) => {

@@ -1,21 +1,31 @@
 import jwt from 'jsonwebtoken';
 
-// This function generates an Access Token
-// We set it to 15 minutes as requested
+const isStaffRole = (role) => {
+    if (!role) return false;
+    const staffRoles = ['admin', 'reception', 'receptionist', 'cashier', 'staff'];
+    return staffRoles.includes(role.toLowerCase().trim());
+};
+
+// Generate Access Token
 export const generateAccessToken = (userId, role) => {
+    const isStaff = isStaffRole(role);
+    const expiresIn = isStaff ? '15m' : '1h'; // 15 minutes for staff, 1 hour for customers
+    
     return jwt.sign(
         { id: userId, role },
         process.env.JWT_SECRET,
-        { expiresIn: '15m' } // 15 minutes validity
+        { expiresIn }
     );
 };
 
-// This function generates a Refresh Token
-// We set it to 7 days as requested
+// Generate Refresh Token
 export const generateRefreshToken = (userId, role) => {
+    const isStaff = isStaffRole(role);
+    const expiresIn = isStaff ? '12h' : '30d'; // 12 hours (shift limit) for staff, 30 days for customers
+    
     return jwt.sign(
         { id: userId, role },
-        process.env.JWT_SECRET, 
-        { expiresIn: '7d' } // 7 days validity
+        process.env.JWT_SECRET,
+        { expiresIn }
     );
 };
