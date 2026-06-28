@@ -1,7 +1,7 @@
 import WeddingHall from '../models/weddingHall.js';
 import WeddingBooking from '../models/weddingBooking.js';
 
-// Create a new booking 
+// Create a new booking
 export const createBooking = async (req, res) => {
     try {
         const { 
@@ -69,7 +69,6 @@ export const createBooking = async (req, res) => {
             return res.status(409).json({ success: false, message: `This hall is already booked from ${overlappingBooking.startTime} to ${overlappingBooking.endTime} on this day.` });
         }
 
-        
         let totalAmount = hall.price;
 
         // Catering cost based on category
@@ -158,9 +157,9 @@ export const createBooking = async (req, res) => {
 export const updateBooking = async (req, res) => {
     try {
         const { id } = req.params;
-        const { 
+        const {
             eventDate, hallId, guestCount,
-            eventType, startTime, endTime, 
+            eventType, startTime, endTime,
             groomName, groomPhone, brideName, bridePhone, nekathTimes, seatingStyle, dietaryNotes, corkageIncluded,
             cateringPackage, selectedMeals = [], optionalServices = [], specialRequests,
             customerName, customerPhone, customerEmail,
@@ -204,7 +203,7 @@ export const updateBooking = async (req, res) => {
             const [sH, sM] = start.split(':').map(Number);
             const [eH, eM] = end.split(':').map(Number);
             let diff = (eH + eM/60) - (sH + sM/60);
-            if (diff < 0) diff += 24; 
+            if (diff < 0) diff += 24;
             return diff;
         };
         const duration = calculateDuration(startTime, endTime);
@@ -365,7 +364,13 @@ export const getAllBookings = async (req, res) => {
 // Get my bookings
 export const getMyBookings = async (req, res) => {
     try {
-        const bookings = await WeddingBooking.find({ customerId: req.user.id })
+        const normalizedEmail = String(req.user.email).trim().toLowerCase();
+        const bookings = await WeddingBooking.find({
+            $or: [
+                { customerId: req.user._id },
+                { customerEmail: normalizedEmail }
+            ]
+        })
             .populate('hallId', 'hallName capacity');
         res.status(200).json({ success: true, data: bookings });
     } catch (error) {

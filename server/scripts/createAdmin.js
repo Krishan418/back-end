@@ -41,7 +41,6 @@ const createAdmin = async () => {
             password: adminPassword,
             confirmPassword: adminPassword,
             isVerified: true,
-            role: 'admin'
             role: 'admin',
             phone: '0000000000'
         });
