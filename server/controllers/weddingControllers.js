@@ -371,7 +371,7 @@ export const getMyBookings = async (req, res) => {
                 { customerEmail: normalizedEmail }
             ]
         })
-            .populate('hallId', 'hallName capacity');
+            .populate('hallId', 'hallName capacity price image');
         res.status(200).json({ success: true, data: bookings });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
