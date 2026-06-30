@@ -1,5 +1,6 @@
 import Booking from '../models/booking.js';
 import Room from '../models/room.js';
+import sendEmail from '../utils/email.js';
 import {
 	CANCELLABLE_BY_USER,
 	isValidStatusTransition,
@@ -43,6 +44,42 @@ const getRoomOptionPrice = (roomName, isAc, stayMode) => {
       return 7500; // 24 hours
     }
   }
+};
+
+const getCalculatedStayMode = (stayMode, slots, checkInType, checkOutType) => {
+	if (stayMode === 'custom' && slots === 1) {
+		if (checkInType === 'Night' && checkOutType === 'Night') {
+			return 'onlyNight';
+		} else {
+			return 'onlyDay';
+		}
+	}
+	return stayMode;
+};
+
+const sendBookingCancellationEmail = async (booking, actionLabel = 'cancelled') => {
+	if (!booking?.email) return;
+
+	const roomRecord = booking.room?.name ? booking.room : await Room.findById(booking.room).select('name');
+	const roomName = roomRecord?.name || 'your room booking';
+	const bookingRef = booking._id ? String(booking._id).slice(-8).toUpperCase() : 'N/A';
+	const subject = `Booking ${actionLabel === 'deleted' ? 'Removed' : 'Cancelled'} - Hotel Janro`;
+	const message = `Dear ${booking.fullName || 'Guest'},\n\nYour booking for ${roomName} has been ${actionLabel === 'deleted' ? 'removed by reception' : 'cancelled'}.\n\nBooking Ref: ${bookingRef}\nIf you have any questions, please contact us.\n\nThank you, Hotel Janro`;
+	const html = `
+		<h2>Booking ${actionLabel === 'deleted' ? 'Removed' : 'Cancelled'}</h2>
+		<p>Dear ${booking.fullName || 'Guest'},</p>
+		<p>Your booking for <strong>${roomName}</strong> has been <strong>${actionLabel === 'deleted' ? 'removed by reception' : 'cancelled'}</strong>.</p>
+		<p><strong>Booking Ref:</strong> ${bookingRef}</p>
+		<p>If you have any questions, please contact us.</p>
+		<p>Thank you,<br/>Hotel Janro</p>
+	`;
+
+	await sendEmail({
+		email: booking.email,
+		subject,
+		message,
+		html
+	});
 };
 
 export const createBooking = async (req, res) => {
@@ -94,7 +131,13 @@ export const createBooking = async (req, res) => {
 			// Custom multi-day calculation
 			const endMs = new Date(checkOutDate).getTime();
 			endIndex = (Math.floor(endMs / (1000 * 60 * 60 * 24)) * 2) + (checkOutType === 'Night' ? 1 : 0);
-			slots = Math.max(1, endIndex - startIndex + 1);
+			if (endIndex < startIndex) {
+				return res.status(400).json({
+					success: false,
+					message: 'Check-out date/time cannot be before check-in date/time'
+				});
+			}
+			slots = endIndex - startIndex + 1;
 		}
 
 		const normalizedEmail = String(email).trim().toLowerCase();
@@ -151,7 +194,8 @@ export const createBooking = async (req, res) => {
 
 		// Price calculation logic: (Base Price * Slots) + Decoration Total
 		const isAc = isAcRoom(room.name, specialRequests);
-		const basePrice = getRoomOptionPrice(room.name, isAc, stayMode);
+		const calculatedStayMode = getCalculatedStayMode(stayMode, slots, checkInType, checkOutType);
+		const basePrice = getRoomOptionPrice(room.name, isAc, calculatedStayMode);
 		const totalPrice = (basePrice * slots) + decorationTotal;
 
 		//Save in the booking database.
@@ -247,6 +291,47 @@ export const updateBookingStatus = async (req, res) => {
 
 		const updatedBooking = await Booking.findById(booking._id).populate('room', 'name price image');
 
+		// Optionally send an email notifying user of status change
+		try {
+			let subject, message, htmlContent;
+			if (status === 'confirmed') {
+				subject = 'Booking Confirmed - Hotel Janro';
+				message = `Dear ${updatedBooking.fullName},\n\nYour booking has been officially confirmed!\n\nRoom: ${updatedBooking.room?.name}\nTotal Price: Rs. ${updatedBooking.totalPrice.toLocaleString()}\nWe look forward to hosting you.\n\nThank you, Hotel Janro`;
+				htmlContent = `
+					<h2>Booking Confirmed!</h2>
+					<p>Dear ${updatedBooking.fullName},</p>
+					<p>Your booking has been officially <strong>confirmed</strong>!</p>
+					<ul>
+						<li><strong>Room:</strong> ${updatedBooking.room?.name}</li>
+						<li><strong>Total Price:</strong> Rs. ${updatedBooking.totalPrice.toLocaleString()}</li>
+					</ul>
+					<p>We look forward to hosting you.</p>
+					<p>Thank you,<br/>Hotel Janro</p>
+				`;
+			} else if (status === 'cancelled') {
+				subject = 'Booking Cancelled/Rejected - Hotel Janro';
+				message = `Dear ${updatedBooking.fullName},\n\nYour booking for ${updatedBooking.room?.name} has been cancelled or rejected.\nIf you have any questions, please contact us.\n\nThank you, Hotel Janro`;
+				htmlContent = `
+					<h2>Booking Status Update</h2>
+					<p>Dear ${updatedBooking.fullName},</p>
+					<p>Your booking for <strong>${updatedBooking.room?.name}</strong> has been cancelled or rejected.</p>
+					<p>If you have any questions, please contact us.</p>
+					<p>Thank you,<br/>Hotel Janro</p>
+				`;
+			}
+
+			if (subject && message && htmlContent) {
+				await sendEmail({
+					email: updatedBooking.email,
+					subject,
+					message,
+					html: htmlContent
+				});
+			}
+		} catch (error) {
+			console.error('Failed to send status update email', error);
+		}
+
 		res.status(200).json({
 			success: true,
 			data: updatedBooking
@@ -295,6 +380,12 @@ export const cancelMyBooking = async (req, res) => {
 			await booking.save();
 		}
 
+		try {
+			await sendBookingCancellationEmail(booking, 'cancelled');
+		} catch (error) {
+			console.error('Failed to send booking cancellation email', error);
+		}
+
 		res.status(200).json({
 			success: true,
 			message: 'Booking cancelled successfully',
@@ -325,6 +416,12 @@ export const deleteBooking = async (req, res) => {
 				room.availableRooms += 1;
 				await room.save();
 			}
+		}
+
+		try {
+			await sendBookingCancellationEmail(booking, 'deleted');
+		} catch (error) {
+			console.error('Failed to send booking deletion email', error);
 		}
 
 		await Booking.findByIdAndDelete(req.params.id);
@@ -402,8 +499,9 @@ export const updateBookingDetails = async (req, res) => {
 			
 			// Recalculate price: (Base Price * Slots) + Decoration Total
 			const isAc = isAcRoom(room.name, booking.specialRequests);
-			const basePrice = getRoomOptionPrice(room.name, isAc, booking.stayMode);
 			const slots = booking.nights || 1;
+			const calculatedStayMode = getCalculatedStayMode(booking.stayMode, slots, booking.checkInType, booking.checkOutType);
+			const basePrice = getRoomOptionPrice(room.name, isAc, calculatedStayMode);
 			booking.totalPrice = (basePrice * slots) + decorationTotal;
 			booking.decorationItems = sanitizedDecorationItems;
 		}
