@@ -26,6 +26,8 @@ export const createGymPass = async (req, res) => {
     // Generate valid Date
     const validDate = new Date();
     validDate.setDate(validDate.getDate() + Number(validDays));
+    // Set expiry to the end of the day to avoid timezone/hour discrepancies
+    validDate.setHours(23, 59, 59, 999);
 
     // Generate unique qrCodeKey
     const qrCodeKey = `JANRO-GYM-${Date.now().toString().slice(-6)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
@@ -58,7 +60,8 @@ export const createGymPass = async (req, res) => {
         const hotelName = settings.headerName || settings.hotelName || 'Hotel Janro';
 
         const subject = `${hotelName} Gym - Your Access Pass QR Code!`;
-        const textMessage = `Dear ${guestName},\n\nYour Gym Pass has been issued successfully.\n\nPass ID: ${passId}\nPass Type: ${passType}\nValid Until: ${validDate.toLocaleString()}\n\nPlease scan your Pass QR code at the gate to check in.`;
+        const formattedExpiry = `${validDate.toDateString()} at 11:59 PM`;
+        const textMessage = `Dear ${guestName},\n\nYour Gym Pass has been issued successfully.\n\nPass ID: ${passId}\nPass Type: ${passType}\nQR Key: ${qrCodeKey}\nValid Until: ${formattedExpiry}\n\nPlease scan your Pass QR code or type your QR Key/Pass ID at the gate to check in.`;
 
         const html = `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -82,22 +85,29 @@ export const createGymPass = async (req, res) => {
                     <td style="padding: 6px 0; font-weight: bold; color: #D4AF37; text-transform: uppercase;">${passType}</td>
                   </tr>
                   <tr>
+                    <td style="padding: 6px 0; color: #64748b;">QR Key:</td>
+                    <td style="padding: 6px 0; font-weight: bold; color: #0F172A; font-family: monospace;">${qrCodeKey}</td>
+                  </tr>
+                  <tr>
                     <td style="padding: 6px 0; color: #64748b;">Phone:</td>
                     <td style="padding: 6px 0; color: #0F172A;">${guestPhone}</td>
                   </tr>
                   <tr>
                     <td style="padding: 6px 0; color: #64748b;">Valid Until:</td>
-                    <td style="padding: 6px 0; color: #0F172A; font-weight: bold;">${validDate.toLocaleString()}</td>
+                    <td style="padding: 6px 0; color: #0F172A; font-weight: bold;">${formattedExpiry}</td>
                   </tr>
                 </table>
               </div>
 
               <div style="text-align: center; margin: 32px 0;">
                 <p style="margin-bottom: 12px; font-weight: bold; color: #0F172A;">Your Gate Access QR Code</p>
-                <div style="display: inline-block; padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+                <div style="display: inline-block; padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; margin-bottom: 12px;">
                   <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${qrCodeKey}" alt="Gym Pass QR Code" style="display: block; width: 200px; height: 200px;" />
                 </div>
-                <p style="font-size: 12px; color: #64748b; margin-top: 8px;">Scan this QR code at the entrance gate to check in.</p>
+                <p style="font-size: 13px; color: #64748b; margin-top: 8px;">
+                  If the QR code image above does not load, please 
+                  <a href="https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${qrCodeKey}" target="_blank" style="color: #D4AF37; font-weight: bold; text-decoration: underline;">click here to view your QR code in your browser</a>.
+                </p>
               </div>
 
               <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
@@ -164,13 +174,25 @@ export const verifyGymScan = async (req, res) => {
       });
     }
 
-    // Lookup pass
-    let pass = await GymPass.findOne({ qrCodeKey });
+    const trimmedKey = qrCodeKey.trim();
+
+    // Lookup pass by qrCodeKey or passId
+    let pass = await GymPass.findOne({
+      $or: [
+        { qrCodeKey: trimmedKey },
+        { passId: trimmedKey }
+      ]
+    });
     let member = null;
 
     if (!pass) {
       // Lookup gym member
-      member = await GymMember.findOne({ memberId: qrCodeKey });
+      member = await GymMember.findOne({
+        $or: [
+          { memberId: trimmedKey },
+          { name: trimmedKey }
+        ]
+      });
       
       if (!member) {
         return res.status(404).json({

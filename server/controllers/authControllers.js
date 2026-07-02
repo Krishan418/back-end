@@ -337,6 +337,14 @@ export const login = async (req, res) => {
     }
 };
 
+// Google login is not wired up yet; keep the route import valid and return a clear response.
+export const googleLogin = async (req, res) => {
+    return res.status(501).json({
+        success: false,
+        message: 'Google login is not implemented yet.'
+    });
+};
+
 // Get logged-in user profile
 export const getMe = async (req, res) => {
     try {
