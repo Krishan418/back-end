@@ -13,7 +13,6 @@ const menuItemSchema = new mongoose.Schema(
       type: String, 
       required: true, 
       trim: true,
-      enum: ["Main Course", "Appetizers", "Desserts", "Beverages", "Breakfast", "Snacks", "Bites", "Chef's Specialty"], 
       index: true   
     },
     price: { 

@@ -22,6 +22,8 @@ import poolBookingRoutes from "./routes/poolBookingRoutes.js";
 import settingsRoutes from "./routes/settingsRoutes.js";
 import adminReportRoutes from "./routes/adminReportRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
+import { createServer } from "http";
+import { initSocket } from "./utils/socket.js";
 import gymRoutes from "./routes/gymRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -104,6 +106,9 @@ try {
   console.warn("⚠️ Starting server without an active MongoDB connection.");
 }
 
-app.listen(PORT, () => {
+const httpServer = createServer(app);
+initSocket(httpServer);
+
+httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

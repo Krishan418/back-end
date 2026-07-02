@@ -1,12 +1,13 @@
 import Order from "../models/order.js";
-import MenuItem from "../models/MenuItem.js"; 
+import MenuItem from "../models/MenuItem.js";
 import Inventory from "../models/inventory.js";
+import { broadcastEvent } from "../utils/socket.js";
 
-// Create a new order with inventory integration
+// Create new order
 export const createOrder = async (req, res) => {
   try {
-    const { 
-      orderType, items, discount = 0, tableNumber, 
+    const {
+      orderType, items, discount = 0, tableNumber,
       roomNumber, deliveryAddress, contactNumber, coordinates,
       customerName, customerUser
     } = req.body;
@@ -14,9 +15,10 @@ export const createOrder = async (req, res) => {
     let subtotal = 0;
     const validatedItems = [];
 
+    // Validate each menu item
     await Promise.all(items.map(async (item) => {
       const realMenuItem = await MenuItem.findById(item.menuItemId);
-      
+
       if (!realMenuItem) {
         throw new Error(`Menu item not found (ID: ${item.menuItemId})`);
       }
@@ -30,16 +32,17 @@ export const createOrder = async (req, res) => {
       }
 
       subtotal += itemPrice * item.quantity;
-      
+
       validatedItems.push({
         menuItemId: realMenuItem._id,
         name: realMenuItem.name,
         portion: item.portion || "",
-        price: itemPrice, 
+        price: itemPrice,
         quantity: item.quantity,
       });
     }));
 
+    // Calculate final totals
     const finalSubtotal = req.body.subtotal || subtotal;
     const finalServiceCharge = req.body.serviceCharge || 0;
     const finalDeliveryFee = req.body.deliveryFee || 0;
@@ -47,14 +50,15 @@ export const createOrder = async (req, res) => {
 
     const orderNumber = req.body.orderNumber || `POS-${Date.now().toString().slice(-6)}`;
 
+    // Save order to database
     const order = await Order.create({
-      orderType, tableNumber, roomNumber, deliveryAddress, 
+      orderType, tableNumber, roomNumber, deliveryAddress,
       contactNumber, coordinates, customerName, customerUser,
-      items: validatedItems, 
-      subtotal: finalSubtotal, 
+      items: validatedItems,
+      subtotal: finalSubtotal,
       serviceCharge: finalServiceCharge,
       deliveryFee: finalDeliveryFee,
-      discount, 
+      discount,
       totalAmount: finalTotalAmount,
       paymentStatus: req.body.paymentStatus || 'Unpaid',
       paymentMethod: req.body.paymentMethod || 'Other',
@@ -63,17 +67,20 @@ export const createOrder = async (req, res) => {
       orderNumber,
     });
 
+    broadcastEvent("orderCreated", order);
+
     res.status(201).json(order);
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 };
 
-// Fetch all orders (filtered by role if necessary)
+// Get all orders
 export const getOrders = async (req, res) => {
   try {
     let query = {};
-    
+
+    // Filter by customer if not admin/staff
     if (req.user && !['admin', 'manager', 'cashier', 'reception', 'receptionist'].includes(req.user.role)) {
       query.customerUser = req.user._id;
     }
@@ -85,35 +92,144 @@ export const getOrders = async (req, res) => {
   }
 };
 
-// Update order details (status, payment, etc.)
+// Update order status or payment
 export const updateOrderStatus = async (req, res) => {
   try {
-    const order = await Order.findByIdAndUpdate(
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    // Check if the user is a customer
+    const isStaff = ['admin', 'manager', 'cashier', 'reception', 'receptionist'].includes(req.user?.role);
+    
+    if (!isStaff) {
+      // Check if it's their own order
+      if (order.customerUser && order.customerUser.toString() !== req.user?._id.toString()) {
+        return res.status(403).json({ message: "You can only edit your own orders" });
+      }
+
+      // Check the 5-minute limit (only for items update, not for status updates by staff)
+      // If req.body contains items, it's an edit
+      if (req.body.items) {
+        const diffInMinutes = (Date.now() - new Date(order.createdAt).getTime()) / (1000 * 60);
+        if (diffInMinutes > 5) {
+          return res.status(400).json({ message: "Order cannot be edited after 5 minutes" });
+        }
+        
+        if (order.orderStatus !== 'Pending') {
+          return res.status(400).json({ message: "Only pending orders can be edited" });
+        }
+
+        // Recalculate totals if items are changed
+        let subtotal = 0;
+        const validatedItems = [];
+
+        await Promise.all(req.body.items.map(async (item) => {
+          const realMenuItem = await MenuItem.findById(item.menuItemId);
+          if (!realMenuItem) throw new Error(`Menu item not found: ${item.menuItemId}`);
+
+          let itemPrice = realMenuItem.price;
+          if (realMenuItem.hasPortions && item.portion) {
+            const selectedPortion = realMenuItem.portions.find(p => p.portionType === item.portion);
+            if (selectedPortion) itemPrice = selectedPortion.price;
+          }
+
+          subtotal += itemPrice * item.quantity;
+          validatedItems.push({
+            menuItemId: realMenuItem._id,
+            name: realMenuItem.name,
+            portion: item.portion || "",
+            price: itemPrice,
+            quantity: item.quantity,
+          });
+        }));
+
+        req.body.items = validatedItems;
+        req.body.subtotal = subtotal;
+        
+        // Recalculate totalAmount based on existing charges
+        const serviceCharge = order.serviceCharge || 0;
+        const deliveryFee = order.deliveryFee || 0;
+        const discount = order.discount || 0;
+        req.body.totalAmount = Number((subtotal + serviceCharge + deliveryFee - discount).toFixed(2));
+      }
+    }
+
+    let updateData = { ...req.body };
+    
+    // Handle Split Payments logic
+    if (req.body.splitPayment) {
+      const { amount, method, note } = req.body.splitPayment;
+      const paymentAmount = Number(amount);
+      if (paymentAmount > 0) {
+        const currentReceived = (order.amountReceived || 0) + paymentAmount;
+        const totalAmount = order.totalAmount || 0;
+        const newBalance = Math.max(totalAmount - currentReceived, 0);
+        
+        updateData.$push = {
+          splitPayments: {
+            amount: paymentAmount,
+            method: method || 'Other',
+            date: new Date(),
+            note: note || ''
+          }
+        };
+        
+        updateData.$set = updateData.$set || {};
+        updateData.$set.amountReceived = currentReceived;
+        updateData.$set.balance = newBalance;
+        
+        if (currentReceived >= totalAmount) {
+          updateData.$set.paymentStatus = 'Paid';
+          updateData.$set.orderStatus = 'Completed';
+        } else {
+          updateData.$set.paymentStatus = 'Partial';
+        }
+        
+        delete updateData.splitPayment;
+      }
+    }
+
+    if (!updateData.$set) {
+      updateData = { $set: updateData };
+    } else {
+      // Move any top-level properties into $set if they aren't MongoDB operators
+      for (const key in updateData) {
+        if (!key.startsWith('$') && key !== 'splitPayment') {
+          updateData.$set[key] = updateData[key];
+          delete updateData[key];
+        }
+      }
+    }
+
+    const updatedOrder = await Order.findByIdAndUpdate(
       req.params.id,
-      { $set: req.body },
+      updateData,
       { new: true, runValidators: true }
     );
-    if (!order) return res.status(404).json({ message: "Order not found" });
-    
-    res.status(200).json(order);
+
+    broadcastEvent("orderUpdated", updatedOrder);
+
+    res.status(200).json(updatedOrder);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// Delete an order
+// Remove order
 export const deleteOrder = async (req, res) => {
   try {
     const order = await Order.findByIdAndDelete(req.params.id);
     if (!order) return res.status(404).json({ message: "Order not found" });
-    
+
+    broadcastEvent("orderDeleted", { id: req.params.id });
+
     res.status(200).json({ message: "Order deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// Get item usage trends for analytics
+// Get item popularity trends
 export const getOrderTrends = async (req, res) => {
   try {
     const trends = await Order.aggregate([
@@ -134,7 +250,7 @@ export const getOrderTrends = async (req, res) => {
   }
 };
 
-// Get sales summary for the POS dashboard
+// Get sales analytics summary
 export const getOrdersSummary = async (req, res) => {
   try {
     let query = {};
@@ -144,11 +260,13 @@ export const getOrdersSummary = async (req, res) => {
 
     const orders = await Order.find(query).lean();
 
+    // Aggregate statistics
     const totalSales = orders.reduce((s, o) => s + (o.totalAmount || 0), 0);
     const completed = orders.filter(o => (o.orderStatus || '').toLowerCase() === 'completed').length;
     const pending = orders.filter(o => (o.orderStatus || '').toLowerCase() === 'pending').length;
     const cancelled = orders.filter(o => (o.orderStatus || '').toLowerCase() === 'cancelled').length;
 
+    // Payment method breakdown
     const paymentMap = {};
     orders.forEach(o => {
       const m = o.paymentMethod || 'Other';
@@ -165,10 +283,10 @@ export const getOrdersSummary = async (req, res) => {
         pending,
         cancelled,
         paymentBreakdown,
-        recent: orders.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)).slice(0,8)
+        recent: orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 8)
       }
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
-};
+};
