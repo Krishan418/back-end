@@ -8,6 +8,10 @@ const weddingHallSchema = new mongoose.Schema(
             required: [true, 'Hall name is required'],
             trim: true
         },
+        description: {
+            type: String,
+            default: ''
+        },
         capacity: {
             type: Number,
             required: [true, 'Hall capacity is required'],
