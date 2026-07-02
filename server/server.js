@@ -22,7 +22,7 @@ import poolBookingRoutes from "./routes/poolBookingRoutes.js";
 import settingsRoutes from "./routes/settingsRoutes.js";
 import adminReportRoutes from "./routes/adminReportRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
-import payhereRoutes from "./routes/payhereRoutes.js";
+import gymRoutes from "./routes/gymRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,7 +73,7 @@ app.use("/api/pool-bookings", poolBookingRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/reports", adminReportRoutes);
 app.use("/api/upload", uploadRoutes);
-app.use("/api/payments", payhereRoutes);
+app.use("/api/gym", gymRoutes);
 
 // Global error handler
 app.use((err, req, res, next) => {

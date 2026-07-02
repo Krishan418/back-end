@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/user.js';
 
-// Protect routes - verify JWT token
+// Protect routes -> verify JWT token
 export const protect = async (req, res, next) => {
     let token;
 
@@ -17,6 +17,14 @@ export const protect = async (req, res, next) => {
                 return res.status(401).json({ 
                     success: false,
                     message: 'User not found' 
+                });
+            }
+
+            // Check if user is active (Case-insensitive)
+            if (req.user.status && req.user.status.toLowerCase() !== 'active') {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Your account is inactive. Please contact admin.'
                 });
             }
 
