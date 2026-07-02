@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import dns from "dns";
-import Order from "../models/order.js";
+import Order from "../models/Order.js";
 
 dotenv.config();
 
