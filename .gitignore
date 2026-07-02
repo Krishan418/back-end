@@ -1,0 +1,2 @@
+# Ignore node_modules at the root
+node_modules/

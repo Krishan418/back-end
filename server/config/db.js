@@ -31,6 +31,6 @@ export const connectDB = async () => {
     }
 
     console.error("❌ MongoDB Connection Error:", error.message);
-    throw error; // Throw so startServer can catch and exit
+    throw error; 
   }
 };

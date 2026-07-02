@@ -1,5 +1,6 @@
 import Booking from '../models/booking.js';
 import Room from '../models/room.js';
+import sendEmail from '../utils/email.js';
 import {
 	CANCELLABLE_BY_USER,
 	isValidStatusTransition,
@@ -7,9 +8,83 @@ import {
 	calculateDecorationTotal
 } from './roombookinghekpers.js';
 
+const isAcRoom = (roomName, specialRequests) => {
+  const norm = (roomName || '').toLowerCase().replace(/[^a-z]/g, '');
+  if (norm.includes('family')) {
+    if (specialRequests && String(specialRequests).toLowerCase().includes('non-ac')) {
+      return false;
+    }
+    return true;
+  }
+  return !norm.includes('nonac');
+};
+
+const getRoomOptionPrice = (roomName, isAc, stayMode) => {
+  const norm = (roomName || '').toLowerCase().replace(/[^a-z]/g, '');
+  const isFamily = norm.includes('family');
+  const isHoneymoon = norm.includes('honeymoon') || norm.includes('wedding');
+
+  if (isFamily) {
+    if (isAc) {
+      return stayMode === 'onlyNight' ? 6750 : 8750;
+    } else {
+      return stayMode === 'onlyNight' ? 5500 : 6750;
+    }
+  } else if (isHoneymoon) {
+    return 9500;
+  } else {
+    // Standard Room
+    if (isAc) {
+      if (stayMode === 'onlyDay') return 6000;
+      if (stayMode === 'onlyNight') return 5500;
+      return 8500; // 24 hours
+    } else {
+      if (stayMode === 'onlyDay') return 4000;
+      if (stayMode === 'onlyNight') return 4500;
+      return 7500; // 24 hours
+    }
+  }
+};
+
+const getCalculatedStayMode = (stayMode, slots, checkInType, checkOutType) => {
+	if (stayMode === 'custom' && slots === 1) {
+		if (checkInType === 'Night' && checkOutType === 'Night') {
+			return 'onlyNight';
+		} else {
+			return 'onlyDay';
+		}
+	}
+	return stayMode;
+};
+
+const sendBookingCancellationEmail = async (booking, actionLabel = 'cancelled') => {
+	if (!booking?.email) return;
+
+	const roomRecord = booking.room?.name ? booking.room : await Room.findById(booking.room).select('name');
+	const roomName = roomRecord?.name || 'your room booking';
+	const bookingRef = booking._id ? String(booking._id).slice(-8).toUpperCase() : 'N/A';
+	const subject = `Booking ${actionLabel === 'deleted' ? 'Removed' : 'Cancelled'} - Hotel Janro`;
+	const message = `Dear ${booking.fullName || 'Guest'},\n\nYour booking for ${roomName} has been ${actionLabel === 'deleted' ? 'removed by reception' : 'cancelled'}.\n\nBooking Ref: ${bookingRef}\nIf you have any questions, please contact us.\n\nThank you, Hotel Janro`;
+	const html = `
+		<h2>Booking ${actionLabel === 'deleted' ? 'Removed' : 'Cancelled'}</h2>
+		<p>Dear ${booking.fullName || 'Guest'},</p>
+		<p>Your booking for <strong>${roomName}</strong> has been <strong>${actionLabel === 'deleted' ? 'removed by reception' : 'cancelled'}</strong>.</p>
+		<p><strong>Booking Ref:</strong> ${bookingRef}</p>
+		<p>If you have any questions, please contact us.</p>
+		<p>Thank you,<br/>Hotel Janro</p>
+	`;
+
+	await sendEmail({
+		email: booking.email,
+		subject,
+		message,
+		html
+	});
+};
+
 export const createBooking = async (req, res) => {
 	try {
-		// Read booking input from request body.
+		// New booking create.
 		const {
 			roomId,
 			checkInDate,
@@ -21,9 +96,11 @@ export const createBooking = async (req, res) => {
 			specialRequests,
 			decorationItems,
 			checkInType,
-			checkOutType
+			checkOutType,
+			stayMode
 		} = req.body;
 
+		//Required Fields Validation
 		if (!roomId || !checkInDate || !checkOutDate || !guests || !fullName || !email) {
 			return res.status(400).json({
 				success: false,
@@ -43,12 +120,25 @@ export const createBooking = async (req, res) => {
 		// Calculate total slots (Day=0, Night=1)
 		// Day = date * 2, Night = date * 2 + 1
 		const startMs = new Date(checkInDate).getTime();
-		const endMs = new Date(checkOutDate).getTime();
-		
 		const startIndex = (Math.floor(startMs / (1000 * 60 * 60 * 24)) * 2) + (checkInType === 'Night' ? 1 : 0);
-		const endIndex = (Math.floor(endMs / (1000 * 60 * 60 * 24)) * 2) + (checkOutType === 'Night' ? 1 : 0);
-		
-		const slots = Math.max(1, endIndex - startIndex + 1);
+
+		let endIndex, slots;
+		if (stayMode === 'onlyDay' || stayMode === 'onlyNight') {
+			// Single-period stays: exactly 1 slot, endIndex = startIndex
+			endIndex = startIndex;
+			slots = 1;
+		} else {
+			// Custom multi-day calculation
+			const endMs = new Date(checkOutDate).getTime();
+			endIndex = (Math.floor(endMs / (1000 * 60 * 60 * 24)) * 2) + (checkOutType === 'Night' ? 1 : 0);
+			if (endIndex < startIndex) {
+				return res.status(400).json({
+					success: false,
+					message: 'Check-out date/time cannot be before check-in date/time'
+				});
+			}
+			slots = endIndex - startIndex + 1;
+		}
 
 		const normalizedEmail = String(email).trim().toLowerCase();
 		const overlapOrConditions = [{ email: normalizedEmail }];
@@ -91,7 +181,7 @@ export const createBooking = async (req, res) => {
 			}
 		}
 
-		// If global counter is still used, decrement it.
+		// When the booking is confirmed, reduce the available room count.
 		if (room.availableRooms > 0) {
 			room.availableRooms -= 1;
 			await room.save();
@@ -103,8 +193,12 @@ export const createBooking = async (req, res) => {
 		const decorationTotal = calculateDecorationTotal(sanitizedDecorationItems);
 
 		// Price calculation logic: (Base Price * Slots) + Decoration Total
-		const totalPrice = (room.price * slots) + decorationTotal;
+		const isAc = isAcRoom(room.name, specialRequests);
+		const calculatedStayMode = getCalculatedStayMode(stayMode, slots, checkInType, checkOutType);
+		const basePrice = getRoomOptionPrice(room.name, isAc, calculatedStayMode);
+		const totalPrice = (basePrice * slots) + decorationTotal;
 
+		//Save in the booking database.
 		const booking = await Booking.create({
 			room: room._id,
 			user: req.user?._id || null,
@@ -197,6 +291,47 @@ export const updateBookingStatus = async (req, res) => {
 
 		const updatedBooking = await Booking.findById(booking._id).populate('room', 'name price image');
 
+		// Optionally send an email notifying user of status change
+		try {
+			let subject, message, htmlContent;
+			if (status === 'confirmed') {
+				subject = 'Booking Confirmed - Hotel Janro';
+				message = `Dear ${updatedBooking.fullName},\n\nYour booking has been officially confirmed!\n\nRoom: ${updatedBooking.room?.name}\nTotal Price: Rs. ${updatedBooking.totalPrice.toLocaleString()}\nWe look forward to hosting you.\n\nThank you, Hotel Janro`;
+				htmlContent = `
+					<h2>Booking Confirmed!</h2>
+					<p>Dear ${updatedBooking.fullName},</p>
+					<p>Your booking has been officially <strong>confirmed</strong>!</p>
+					<ul>
+						<li><strong>Room:</strong> ${updatedBooking.room?.name}</li>
+						<li><strong>Total Price:</strong> Rs. ${updatedBooking.totalPrice.toLocaleString()}</li>
+					</ul>
+					<p>We look forward to hosting you.</p>
+					<p>Thank you,<br/>Hotel Janro</p>
+				`;
+			} else if (status === 'cancelled') {
+				subject = 'Booking Cancelled/Rejected - Hotel Janro';
+				message = `Dear ${updatedBooking.fullName},\n\nYour booking for ${updatedBooking.room?.name} has been cancelled or rejected.\nIf you have any questions, please contact us.\n\nThank you, Hotel Janro`;
+				htmlContent = `
+					<h2>Booking Status Update</h2>
+					<p>Dear ${updatedBooking.fullName},</p>
+					<p>Your booking for <strong>${updatedBooking.room?.name}</strong> has been cancelled or rejected.</p>
+					<p>If you have any questions, please contact us.</p>
+					<p>Thank you,<br/>Hotel Janro</p>
+				`;
+			}
+
+			if (subject && message && htmlContent) {
+				await sendEmail({
+					email: updatedBooking.email,
+					subject,
+					message,
+					html: htmlContent
+				});
+			}
+		} catch (error) {
+			console.error('Failed to send status update email', error);
+		}
+
 		res.status(200).json({
 			success: true,
 			data: updatedBooking
@@ -245,6 +380,12 @@ export const cancelMyBooking = async (req, res) => {
 			await booking.save();
 		}
 
+		try {
+			await sendBookingCancellationEmail(booking, 'cancelled');
+		} catch (error) {
+			console.error('Failed to send booking cancellation email', error);
+		}
+
 		res.status(200).json({
 			success: true,
 			message: 'Booking cancelled successfully',
@@ -277,11 +418,101 @@ export const deleteBooking = async (req, res) => {
 			}
 		}
 
+		try {
+			await sendBookingCancellationEmail(booking, 'deleted');
+		} catch (error) {
+			console.error('Failed to send booking deletion email', error);
+		}
+
 		await Booking.findByIdAndDelete(req.params.id);
 
 		res.status(200).json({
 			success: true,
 			message: 'Booking deleted successfully'
+		});
+	} catch (error) {
+		res.status(500).json({
+			success: false,
+			message: error.message
+		});
+	}
+};
+
+export const updateBookingDetails = async (req, res) => {
+	try {
+		const booking = await Booking.findById(req.params.id);
+		if (!booking) {
+			return res.status(404).json({
+				success: false,
+				message: 'Booking not found'
+			});
+		}
+
+		// Authorization: Admin/Staff can always edit. Owner can edit ONLY if check-in is >= 3 days away.
+		const isStaff = ['admin', 'manager', 'receptionist', 'reception'].includes(req.user.role);
+		const isOwner = booking.user && booking.user.toString() === req.user._id.toString();
+
+		if (!isStaff && !isOwner) {
+			return res.status(403).json({
+				success: false,
+				message: 'Not authorized to edit this booking'
+			});
+		}
+
+		if (!isStaff) {
+			// Enforce 3 days policy for customer
+			const checkInDate = new Date(booking.checkInDate);
+			const diffTime = checkInDate.getTime() - Date.now();
+			const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+			if (diffDays < 3) {
+				return res.status(400).json({
+					success: false,
+					message: 'Bookings can only be edited at least 3 days prior to check-in.'
+				});
+			}
+		}
+
+		// Fields we can update
+		const {
+			fullName,
+			phone,
+			guests,
+			specialRequests,
+			decorationItems
+		} = req.body;
+
+		if (fullName) booking.fullName = fullName;
+		if (phone) booking.phone = phone;
+		if (specialRequests !== undefined) booking.specialRequests = specialRequests;
+
+		// Handle guests change
+		if (guests) {
+			booking.guests = guests;
+		}
+
+		// Handle decorations update (only for honeymoon suite)
+		const room = await Room.findById(booking.room);
+		if (room && decorationItems) {
+			const supportsDecorations = String(room.name || '').toLowerCase().includes('honeymoon');
+			const sanitizedDecorationItems = supportsDecorations ? sanitizeDecorationItems(decorationItems) : [];
+			const decorationTotal = calculateDecorationTotal(sanitizedDecorationItems);
+			
+			// Recalculate price: (Base Price * Slots) + Decoration Total
+			const isAc = isAcRoom(room.name, booking.specialRequests);
+			const slots = booking.nights || 1;
+			const calculatedStayMode = getCalculatedStayMode(booking.stayMode, slots, booking.checkInType, booking.checkOutType);
+			const basePrice = getRoomOptionPrice(room.name, isAc, calculatedStayMode);
+			booking.totalPrice = (basePrice * slots) + decorationTotal;
+			booking.decorationItems = sanitizedDecorationItems;
+		}
+
+		await booking.save();
+
+		const updatedBooking = await Booking.findById(booking._id).populate('room', 'name price image');
+		res.status(200).json({
+			success: true,
+			message: 'Booking updated successfully',
+			data: updatedBooking
 		});
 	} catch (error) {
 		res.status(500).json({

@@ -1,3 +1,6 @@
+//Defines the structure of how Room data is stored in the MongoDB database.
+
+
 import mongoose from 'mongoose';
 
 const roomSchema = new mongoose.Schema(

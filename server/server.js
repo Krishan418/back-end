@@ -16,6 +16,8 @@ import orderRoutes from "./routes/orderRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
+import mongoSanitize from 'express-mongo-sanitize';
+import xss from 'xss-clean';
 import poolBookingRoutes from "./routes/poolBookingRoutes.js";
 import settingsRoutes from "./routes/settingsRoutes.js";
 import adminReportRoutes from "./routes/adminReportRoutes.js";
@@ -36,6 +38,13 @@ app.use(helmet({
 }));
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Data sanitization against NoSQL query injection
+app.use(mongoSanitize());
+
+// Data sanitization against XSS
+app.use(xss());
 
 // Serve static files from uploads directory
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));

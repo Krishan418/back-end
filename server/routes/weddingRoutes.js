@@ -11,7 +11,6 @@ import {
     getMyBookings,
     getAllBookings,
     addPayment,
-    updateGuestCount,
     createHall,
     updateHall,
     deleteHall
@@ -38,7 +37,6 @@ router.put('/halls/:id', protect, authorize('admin'), updateHall);
 router.delete('/halls/:id', protect, authorize('admin'), deleteHall);
 router.put('/bookings/:id/status', protect, authorize('admin', 'receptionist'), updateBookingStatus);
 router.put('/bookings/:id/payment', protect, authorize('admin', 'receptionist'), addPayment);
-router.put('/bookings/:id/guest-count', protect, authorize('admin', 'receptionist'), updateGuestCount);
 router.delete('/bookings/:id', protect, authorize('admin'), deleteBookingRequest);
 
 export default router;

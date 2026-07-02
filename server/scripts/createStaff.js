@@ -35,8 +35,10 @@ const createStaff = async () => {
             if (existingUser) {
                 existingUser.role = staff.role;
                 existingUser.isVerified = true;
+                existingUser.password = staff.password;
+                existingUser.confirmPassword = staff.password;
                 await existingUser.save({ validateBeforeSave: false });
-                console.log(`${staff.name} already exists, updated role to ${staff.role} and set verified`);
+                console.log(`${staff.name} already exists, updated role to ${staff.role}, updated password, and set verified`);
                 continue;
             }
 
