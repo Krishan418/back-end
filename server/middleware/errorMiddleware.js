@@ -1,7 +1,4 @@
-/**
- * Global Error Handling Middleware
- * Catch-all for any errors thrown in routes
- */
+/* Global Error Handling Middleware*/
 export const errorHandler = (err, req, res, next) => {
   const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
   
@@ -12,9 +9,7 @@ export const errorHandler = (err, req, res, next) => {
   });
 };
 
-/**
- * 404 Not Found Middleware
- */
+/* 404 Not Found Middleware*/
 export const notFound = (req, res, next) => {
   const error = new Error(`Not Found - ${req.originalUrl}`);
   res.status(404);

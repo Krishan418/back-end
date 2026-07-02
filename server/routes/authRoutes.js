@@ -15,32 +15,25 @@ import {
     updateUser,
     deleteUser,
     changePassword,
-    verifyEmail,
-    resendOTP,
-    requestEmailChange,
-    verifyEmailChange
+    googleLogin
 } from '../controllers/authControllers.js';
 
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Public routes
 router.post('/register', register);
 router.post('/login', login);
+router.post('/google', googleLogin);
 router.post('/refresh', refresh);
 router.post('/forgotpassword', forgotPassword);
 router.put('/resetpassword/:resettoken', resetPassword);
-router.post('/verify-email', verifyEmail);
-router.post('/resend-otp', resendOTP);
 
-// Protected routes (any logged-in user)
+// Protected routes
 router.get('/me', protect, getMe);
 router.put('/updateme', protect, updateMe);
 router.put('/updatepassword', protect, updatePassword);
 router.put('/change-password', protect, changePassword);
-router.post('/request-email-change', protect, requestEmailChange);
-router.post('/verify-email-change', protect, verifyEmailChange);
 
 // Admin-only routes
 router.get('/users', protect, authorize('admin'), getAllUsers);

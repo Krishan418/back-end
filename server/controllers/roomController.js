@@ -15,7 +15,7 @@ export const getAdminRooms = async (req, res) => {
 
 		if (search) {
 			filters.$or = [
-				{ name: { $regex: search, $options: 'i' } },
+				{ name: { $regex: search, $options: 'i' } },//Case insensitive search.
 				{ description: { $regex: search, $options: 'i' } }
 			];
 		}
@@ -25,10 +25,11 @@ export const getAdminRooms = async (req, res) => {
 		const skip = (parsedPage - 1) * parsedLimit;
 
 		const [rooms, total] = await Promise.all([
-			Room.find(filters).sort({ createdAt: -1 }).skip(skip).limit(parsedLimit),
-			Room.countDocuments(filters)
+			Room.find(filters).sort({ createdAt: -1 }).skip(skip).limit(parsedLimit),//Do not load too much data once.
+			Room.countDocuments(filters)//Calculate the total room count.
 		]);
 
+			//sends a successful response to the frontend
 		res.status(200).json({
 			success: true,
 			count: rooms.length,
@@ -45,6 +46,7 @@ export const getAdminRooms = async (req, res) => {
 	}
 };
 
+//Generate admin dashboard statistics, Counts total, active, and inactive rooms.
 export const getRoomAdminStats = async (req, res) => {
 	try {
 		const [totalRooms, activeRooms, inactiveRooms, totalAvailableCapacity, priceAgg] = await Promise.all([
@@ -81,6 +83,8 @@ export const getRoomAdminStats = async (req, res) => {
 	}
 };
 
+
+//Show available rooms to customers.
 export const getRooms = async (req, res) => {
 	try {
 		const { minPrice, maxPrice, guests, search, onlyAvailable } = req.query;
@@ -126,6 +130,8 @@ export const getRooms = async (req, res) => {
 	}
 };
 
+
+//get single room details.
 export const getRoomById = async (req, res) => {
 	try {
 		const room = await Room.findOne({ _id: req.params.id, isActive: true });
@@ -169,7 +175,7 @@ export const updateRoom = async (req, res) => {
 	try {
 		const room = await Room.findByIdAndUpdate(req.params.id, req.body, {
 			new: true,
-			runValidators: true
+			runValidators: true //Prevent invalid data.
 		});
 
 		if (!room) {
@@ -202,7 +208,7 @@ export const deleteRoom = async (req, res) => {
 			});
 		}
 
-		room.isActive = false;
+		room.isActive = false;//It is hidden without removing it from the room database.
 		await room.save();
 
 		res.status(200).json({
