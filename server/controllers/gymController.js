@@ -1,6 +1,8 @@
 import GymPass from '../models/gymPass.js';
 import GymAttendance from '../models/gymAttendance.js';
 import GymMember from '../models/gymMember.js';
+import sendEmail from '../utils/email.js';
+import Settings from '../models/Settings.js';
 
 export const createGymPass = async (req, res) => {
   try {
@@ -8,6 +10,7 @@ export const createGymPass = async (req, res) => {
       passType,
       guestName,
       guestPhone,
+      guestEmail = '',
       roomNumber = '',
       paymentStatus = 'Paid',
       validDays = 1
@@ -30,17 +33,97 @@ export const createGymPass = async (req, res) => {
     // Generate unique passId
     const passId = `JANRO-PASS-${Math.floor(1000 + Math.random() * 9000)}`;
 
+    console.log("createGymPass invoked. req.body:", req.body);
+
     const pass = await GymPass.create({
       passId,
       passType,
       guestName,
       guestPhone,
+      guestEmail,
       roomNumber,
       qrCodeKey,
       paymentStatus,
       validDate,
       status: 'Active'
     });
+
+    console.log("Gym pass created. ID:", pass._id, "Email:", guestEmail);
+
+    // Send Welcome Email with QR Code if guestEmail is provided
+    if (guestEmail) {
+      console.log("Attempting to send pass QR code email to:", guestEmail);
+      try {
+        const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
+        const hotelName = settings.headerName || settings.hotelName || 'Hotel Janro';
+
+        const subject = `${hotelName} Gym - Your Access Pass QR Code!`;
+        const textMessage = `Dear ${guestName},\n\nYour Gym Pass has been issued successfully.\n\nPass ID: ${passId}\nPass Type: ${passType}\nValid Until: ${validDate.toLocaleString()}\n\nPlease scan your Pass QR code at the gate to check in.`;
+
+        const html = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            <div style="background-color: #0F172A; padding: 24px; text-align: center; color: white;">
+              <h1 style="margin: 0; color: #D4AF37; font-size: 24px;">Your Gym Access Pass</h1>
+              <p style="margin: 4px 0 0 0; font-size: 14px; text-transform: uppercase; letter-spacing: 2px;">Pass Issued Successfully</p>
+            </div>
+            <div style="padding: 24px; color: #334155;">
+              <p>Dear <strong>${guestName}</strong>,</p>
+              <p>Your Gym Access Pass has been issued successfully. Below are your pass details and access QR code.</p>
+              
+              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 24px 0;">
+                <h3 style="margin-top: 0; color: #0F172A; font-size: 16px; border-bottom: 1px solid #cbd5e1; padding-bottom: 8px;">Pass Details</h3>
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                  <tr>
+                    <td style="padding: 6px 0; color: #64748b; width: 40%;">Pass ID:</td>
+                    <td style="padding: 6px 0; font-weight: bold; color: #0F172A;">${passId}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; color: #64748b;">Pass Type:</td>
+                    <td style="padding: 6px 0; font-weight: bold; color: #D4AF37; text-transform: uppercase;">${passType}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; color: #64748b;">Phone:</td>
+                    <td style="padding: 6px 0; color: #0F172A;">${guestPhone}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; color: #64748b;">Valid Until:</td>
+                    <td style="padding: 6px 0; color: #0F172A; font-weight: bold;">${validDate.toLocaleString()}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <div style="text-align: center; margin: 32px 0;">
+                <p style="margin-bottom: 12px; font-weight: bold; color: #0F172A;">Your Gate Access QR Code</p>
+                <div style="display: inline-block; padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${qrCodeKey}" alt="Gym Pass QR Code" style="display: block; width: 200px; height: 200px;" />
+                </div>
+                <p style="font-size: 12px; color: #64748b; margin-top: 8px;">Scan this QR code at the entrance gate to check in.</p>
+              </div>
+
+              <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+              <p style="font-size: 14px; line-height: 1.5;">If you have any questions, please contact the gym reception desk or front office.</p>
+              <p style="font-size: 14px; margin-top: 24px;">Best regards,<br/><strong>Management Team</strong><br/>${hotelName}</p>
+            </div>
+            <div style="background-color: #f8fafc; padding: 16px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
+              &copy; ${new Date().getFullYear()} ${hotelName}. All rights reserved.
+            </div>
+          </div>
+        `;
+
+        await sendEmail({
+          email: guestEmail,
+          subject,
+          message: textMessage,
+          html,
+          hotelName
+        });
+        console.log("Pass QR code email sent successfully to:", guestEmail);
+      } catch (emailError) {
+        console.error('Failed to send pass QR code email:', emailError);
+      }
+    } else {
+      console.log("No guestEmail provided, skipping email sending.");
+    }
 
     return res.status(201).json({
       success: true,
@@ -82,16 +165,45 @@ export const verifyGymScan = async (req, res) => {
     }
 
     // Lookup pass
-    const pass = await GymPass.findOne({ qrCodeKey });
+    let pass = await GymPass.findOne({ qrCodeKey });
+    let member = null;
 
     if (!pass) {
-      return res.status(404).json({
-        success: false,
-        message: 'Pass not recognized. QR Code is invalid!'
+      // Lookup gym member
+      member = await GymMember.findOne({ memberId: qrCodeKey });
+      
+      if (!member) {
+        return res.status(404).json({
+          success: false,
+          message: 'Pass or Member not recognized. QR Code is invalid!'
+        });
+      }
+
+      // Verify Member status
+      if (member.status !== 'Active') {
+        return res.status(400).json({
+          success: false,
+          message: `Access denied! Member ${member.name} is Inactive.`
+        });
+      }
+
+      // Validation successful! Record attendance
+      const attendance = await GymAttendance.create({
+        memberId: member._id,
+        guestName: member.name,
+        passType: 'Membership',
+        roomNumber: ''
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `Welcome, ${member.name}! Access Granted.`,
+        attendance,
+        member
       });
     }
 
-    // Verify Payment
+    // Verify Payment for Pass
     if (pass.paymentStatus !== 'Paid') {
       return res.status(400).json({
         success: false,
@@ -264,6 +376,69 @@ export const createGymMember = async (req, res) => {
       medicalNotes,
       status
     });
+
+    // Send Welcome Email if email is provided
+    if (email) {
+      try {
+        const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
+        const hotelName = settings.hotelName;
+
+        const subject = `Welcome to ${hotelName} Gym - Successfully Registered!`;
+        const textMessage = `Dear ${name},\n\nWelcome to ${hotelName} Gym! Your membership has been registered successfully.\n\nMember ID: ${memberId}\n\nThank you for choosing us!`;
+
+        const html = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            <div style="background-color: #0F172A; padding: 24px; text-align: center; color: white;">
+              <h1 style="margin: 0; color: #D4AF37; font-size: 24px;">Welcome to ${hotelName} Gym!</h1>
+              <p style="margin: 4px 0 0 0; font-size: 14px; text-transform: uppercase; letter-spacing: 2px;">Membership Registered Successfully</p>
+            </div>
+            <div style="padding: 24px; color: #334155;">
+              <p>Dear <strong>${name}</strong>,</p>
+              <p>We are excited to welcome you as a registered member of our Gym! Your membership registration is now active.</p>
+              
+              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 24px 0;">
+                <h3 style="margin-top: 0; color: #0F172A; font-size: 16px; border-bottom: 1px solid #cbd5e1; padding-bottom: 8px;">Membership Details</h3>
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                  <tr>
+                    <td style="padding: 6px 0; color: #64748b; width: 40%;">Member ID:</td>
+                    <td style="padding: 6px 0; font-weight: bold; color: #0F172A;">${memberId}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; color: #64748b;">Phone:</td>
+                    <td style="padding: 6px 0; color: #0F172A;">${phone}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; color: #64748b;">NIC:</td>
+                    <td style="padding: 6px 0; color: #0F172A;">${nic || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; color: #64748b;">Gender:</td>
+                    <td style="padding: 6px 0; color: #0F172A;">${gender}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+              <p style="font-size: 14px; line-height: 1.5;">If you have any questions or require assistance, please feel free to reach out to the gym reception counter or contact hotel management.</p>
+              <p style="font-size: 14px; margin-top: 24px;">Best regards,<br/><strong>Management Team</strong><br/>${hotelName}</p>
+            </div>
+            <div style="background-color: #f8fafc; padding: 16px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
+              &copy; ${new Date().getFullYear()} ${hotelName}. All rights reserved.
+            </div>
+          </div>
+        `;
+
+        await sendEmail({
+          email,
+          subject,
+          message: textMessage,
+          html,
+          hotelName
+        });
+      } catch (emailError) {
+        console.error('Failed to send welcome email to gym member:', emailError);
+      }
+    }
 
     return res.status(201).json({
       success: true,
