@@ -813,22 +813,3 @@ export const googleLogin = async (req, res) => {
     }
 };
 
-// Resend Verification  OTP
-export const resendOTP = async (req, res) => {
-    try {
-        const { email } = req.body;
-
-        if (!email) {
-            return res.status(400).json({ success: false, message: 'Please provide email' });
-        }
-
-        const user = await User.findOne({ email });
-
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'User not found' });
-        }
-
-        if (user.isVerified) {
-            return res.status(400).json({ success: false, message: 'User is already verified' });
-        }
-
