@@ -6,8 +6,13 @@ export const getMenuItems = async (req, res) => {
     const { category, search, page, limit, populate, isAvailable } = req.query;
     let query = {};
 
-    if (category) query.category = category;
-    if (search) query.name = { $regex: search, $options: "i" };
+    if (category && category !== 'All') query.category = category;
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { category: { $regex: search, $options: "i" } }
+      ];
+    }
     if (isAvailable !== undefined) query.isAvailable = isAvailable === "true";
 
 
