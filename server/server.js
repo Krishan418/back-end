@@ -39,6 +39,17 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Express 5 query getter compatibility workaround for older middleware
+app.use((req, res, next) => {
+    Object.defineProperty(req, 'query', {
+        value: { ...req.query },
+        writable: true,
+        configurable: true,
+        enumerable: true
+    });
+    next();
+});
+
 // Data sanitization against NoSQL query injection
 app.use((req, res, next) => {
   if (req.body) mongoSanitize.sanitize(req.body);

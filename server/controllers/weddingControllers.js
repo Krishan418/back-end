@@ -391,12 +391,12 @@ export const getHalls = async (req, res) => {
 // Create hall
 export const createHall = async (req, res) => {
     try {
-        const { hallName, capacity, price, type, status, image } = req.body;
+        const { hallName, capacity, price, type, status, image, location } = req.body;
         if (!hallName || !capacity || !price) {
             return res.status(400).json({ success: false, message: 'Please provide hallName, capacity, and price' });
         }
 
-        const hall = await WeddingHall.create({ hallName, capacity, price, type: type || 'Hall', status: status || 'available', image });
+        const hall = await WeddingHall.create({ hallName, capacity, price, type: type || 'Hall', status: status || 'available', image, location });
         res.status(201).json({ success: true, message: 'Venue created', data: hall });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -406,8 +406,8 @@ export const createHall = async (req, res) => {
 // Update hall
 export const updateHall = async (req, res) => {
     try {
-        const { hallName, capacity, price, type, status, image } = req.body;
-        const hall = await WeddingHall.findByIdAndUpdate(req.params.id, { hallName, capacity, price, type, status, image }, { new: true, runValidators: true });
+        const { hallName, capacity, price, type, status, image, location } = req.body;
+        const hall = await WeddingHall.findByIdAndUpdate(req.params.id, { hallName, capacity, price, type, status, image, location }, { new: true, runValidators: true });
         if (!hall) return res.status(404).json({ success: false, message: 'Venue not found' });
         res.status(200).json({ success: true, message: 'Venue updated', data: hall });
     } catch (error) {
