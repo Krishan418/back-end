@@ -154,9 +154,56 @@ export const updateOrderStatus = async (req, res) => {
       }
     }
 
+    let updateData = { ...req.body };
+    
+    // Handle Split Payments logic
+    if (req.body.splitPayment) {
+      const { amount, method, note } = req.body.splitPayment;
+      const paymentAmount = Number(amount);
+      if (paymentAmount > 0) {
+        const currentReceived = (order.amountReceived || 0) + paymentAmount;
+        const totalAmount = order.totalAmount || 0;
+        const newBalance = Math.max(totalAmount - currentReceived, 0);
+        
+        updateData.$push = {
+          splitPayments: {
+            amount: paymentAmount,
+            method: method || 'Other',
+            date: new Date(),
+            note: note || ''
+          }
+        };
+        
+        updateData.$set = updateData.$set || {};
+        updateData.$set.amountReceived = currentReceived;
+        updateData.$set.balance = newBalance;
+        
+        if (currentReceived >= totalAmount) {
+          updateData.$set.paymentStatus = 'Paid';
+          updateData.$set.orderStatus = 'Completed';
+        } else {
+          updateData.$set.paymentStatus = 'Partial';
+        }
+        
+        delete updateData.splitPayment;
+      }
+    }
+
+    if (!updateData.$set) {
+      updateData = { $set: updateData };
+    } else {
+      // Move any top-level properties into $set if they aren't MongoDB operators
+      for (const key in updateData) {
+        if (!key.startsWith('$') && key !== 'splitPayment') {
+          updateData.$set[key] = updateData[key];
+          delete updateData[key];
+        }
+      }
+    }
+
     const updatedOrder = await Order.findByIdAndUpdate(
       req.params.id,
-      { $set: req.body },
+      updateData,
       { new: true, runValidators: true }
     );
 
