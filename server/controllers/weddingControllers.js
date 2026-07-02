@@ -73,17 +73,35 @@ export const createBooking = async (req, res) => {
 
         // Catering cost based on category
         if (bookingCategory === 'Wedding') {
-            const packagePrices = { 'Silver': 2500, 'Gold': 4000, 'Platinum': 6500 };
-            if (packagePrices[cateringPackage]) {
-                totalAmount += packagePrices[cateringPackage] * Number(guestCount);
+            const weddingPackagePrices = {
+                '100 Pax Package': 4750,
+                '150 Pax Package': 4450,
+                '200 Pax Package': 3850,
+                '250 Pax Package': 3750
+            };
+            if (weddingPackagePrices[cateringPackage]) {
+                totalAmount += weddingPackagePrices[cateringPackage] * Number(guestCount);
             } else if (cateringPackage === 'Custom') {
                 totalAmount += Number(customPackagePrice) * Number(guestCount);
             }
         } else {
-            const mealPrices = { 'Breakfast': 800, 'Lunch': 1500, 'Tea Time': 600, 'Dinner': 1800 };
-            selectedMeals.forEach(meal => {
-                if (mealPrices[meal]) totalAmount += mealPrices[meal] * Number(guestCount);
-            });
+            // Events can use the event catering packages OR individual meals
+            const eventPackagePrices = {
+                'Lunch With Pool': 2415,
+                'Menu I': 2900,
+                'Menu II': 2750
+            };
+            if (cateringPackage && eventPackagePrices[cateringPackage]) {
+                totalAmount += eventPackagePrices[cateringPackage] * Number(guestCount);
+            } else if (cateringPackage === 'Custom') {
+                totalAmount += Number(customPackagePrice) * Number(guestCount);
+            } else {
+                // Fallback to individual meals
+                const mealPrices = { 'Breakfast': 800, 'Lunch': 1500, 'Tea Time': 600, 'Dinner': 1800 };
+                selectedMeals.forEach(meal => {
+                    if (mealPrices[meal]) totalAmount += mealPrices[meal] * Number(guestCount);
+                });
+            }
         }
 
         // Optional services
@@ -176,18 +194,34 @@ export const updateBooking = async (req, res) => {
         const hall = await WeddingHall.findById(hallId);
         if (hall) totalAmount += hall.price;
 
-        const packagePrices = { Silver: 2500, Gold: 4000, Platinum: 6500 };
         if (bookingCategory === 'Wedding') {
-            if (packagePrices[cateringPackage]) {
-                totalAmount += (packagePrices[cateringPackage] * guestCount);
+            const weddingPackagePrices = {
+                '100 Pax Package': 4750,
+                '150 Pax Package': 4450,
+                '200 Pax Package': 3850,
+                '250 Pax Package': 3750
+            };
+            if (weddingPackagePrices[cateringPackage]) {
+                totalAmount += (weddingPackagePrices[cateringPackage] * guestCount);
             } else if (cateringPackage === 'Custom') {
                 totalAmount += (Number(customPackagePrice) * guestCount);
             }
         } else {
-            const mealPrices = { 'Breakfast': 800, 'Lunch': 1500, 'Tea Time': 600, 'Dinner': 1800 };
-            selectedMeals.forEach(meal => {
-                if (mealPrices[meal]) totalAmount += (mealPrices[meal] * guestCount);
-            });
+            const eventPackagePrices = {
+                'Lunch With Pool': 2415,
+                'Menu I': 2900,
+                'Menu II': 2750
+            };
+            if (cateringPackage && eventPackagePrices[cateringPackage]) {
+                totalAmount += (eventPackagePrices[cateringPackage] * guestCount);
+            } else if (cateringPackage === 'Custom') {
+                totalAmount += (Number(customPackagePrice) * guestCount);
+            } else {
+                const mealPrices = { 'Breakfast': 800, 'Lunch': 1500, 'Tea Time': 600, 'Dinner': 1800 };
+                selectedMeals.forEach(meal => {
+                    if (mealPrices[meal]) totalAmount += (mealPrices[meal] * guestCount);
+                });
+            }
         }
 
         const weddingServicePrices = { 'Decorations': 35000, 'DJ/Music': 25000, 'Photography': 40000, 'Videography': 30000, 'Wedding Cake': 20000, 'Lighting System': 20000, 'Flower Arrangements': 15000 };
