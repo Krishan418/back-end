@@ -1070,3 +1070,4 @@ export const googleLogin = async (req, res) => {
         res.status(400).json({ success: false, message: 'Google authentication failed: ' + error.message });
     }
 };
+

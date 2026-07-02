@@ -22,6 +22,7 @@ const router = express.Router();
 // Public routes (or any logged in user)
 router.get('/halls/availability', getHallAvailability);
 router.get('/halls/booked-dates', getMonthlyBookedDates);
+router.get('/halls', getHalls);
 
 // Protected routes
 router.get('/my-bookings', protect, getMyBookings);
@@ -30,7 +31,6 @@ router.get('/my-bookings', protect, getMyBookings);
 router.post('/bookings', protect, authorize('admin', 'receptionist'), createBooking);
 router.put('/bookings/:id', protect, authorize('admin', 'receptionist'), updateBooking);
 router.get('/bookings', protect, authorize('admin', 'receptionist'), getAllBookings);
-router.get('/halls', protect, authorize('admin', 'receptionist'), getHalls);
 router.post('/halls', protect, authorize('admin'), createHall);
 router.put('/halls/:id/status', protect, authorize('admin', 'receptionist'), toggleHallStatus);
 router.put('/halls/:id', protect, authorize('admin'), updateHall);

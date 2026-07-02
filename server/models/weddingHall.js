@@ -32,9 +32,13 @@ const weddingHallSchema = new mongoose.Schema(
             enum: ['available', 'maintenance', 'unavailable', 'occupied'],
             default: 'available'
         },
-        image: {
+                image: {
             type: String,
             default: 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=800'
+        },
+        location: {
+            type: String,
+            default: 'Main Building'
         }
     },
     {
