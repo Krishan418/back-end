@@ -14,12 +14,12 @@ const settingsSchema = new mongoose.Schema({
   address: {
     type: String,
     required: true,
-    default: '123 Luxury Avenue, Paradise City, PC 10001'
+    default: 'No: 10/2, B, Medagodawatta, Malwana-Dompe Road, Dompe 11680, Sri Lanka'
   },
   phone: {
     type: String,
     required: true,
-    default: '+1 (555) 123-4567'
+    default: '+94 76 360 0041'
   },
   website: {
     type: String,
