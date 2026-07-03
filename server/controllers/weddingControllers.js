@@ -1,5 +1,6 @@
 import WeddingHall from '../models/weddingHall.js';
 import WeddingBooking from '../models/weddingBooking.js';
+import sendEmail from '../utils/email.js';
 
 // Create a new booking
 export const createBooking = async (req, res) => {
@@ -289,6 +290,43 @@ export const updateBookingStatus = async (req, res) => {
 
         booking.bookingStatus = bookingStatus;
         await booking.save();
+
+        if (bookingStatus === 'confirmed') {
+            try {
+                const bookingIdStr = booking._id ? String(booking._id).slice(-8).toUpperCase() : 'N/A';
+                const eventDateStr = new Date(booking.eventDate).toLocaleDateString();
+                const hallName = booking.hallId?.hallName || 'Event Venue';
+                
+                const subject = 'Booking Confirmed - Hotel Janro';
+                const message = `Booking Confirmed!\n\nDear ${booking.customerName},\n\nYour booking has been successfully confirmed.\n\nBooking ID: EV${bookingIdStr}\nEvent Venue: ${hallName}\nEvent Date: ${eventDateStr}\nTime: ${booking.startTime} - ${booking.endTime}\nGuests: ${booking.guestCount}\nTotal Price: Rs. ${booking.totalAmount.toLocaleString()}\nPayment Status: ${booking.paymentStatus}\n\nWe look forward to hosting you.\n\nThank you,\nHotel Janro`;
+                
+                const htmlContent = `
+					<h2>Booking Confirmed!</h2>
+					<p>Dear ${booking.customerName},</p>
+					<p>Your booking has been successfully confirmed.</p>
+					<p>
+						<strong>Booking ID:</strong> EV${bookingIdStr}<br/>
+						<strong>Event Venue:</strong> ${hallName}<br/>
+						<strong>Event Date:</strong> ${eventDateStr}<br/>
+						<strong>Time:</strong> ${booking.startTime} - ${booking.endTime}<br/>
+						<strong>Guests:</strong> ${booking.guestCount}<br/>
+						<strong>Total Price:</strong> Rs. ${booking.totalAmount.toLocaleString()}<br/>
+						<strong>Payment Status:</strong> ${booking.paymentStatus}
+					</p>
+					<p>We look forward to hosting you.</p>
+					<p>Thank you,<br/>Hotel Janro</p>
+				`;
+
+                await sendEmail({
+                    email: booking.customerEmail,
+                    subject,
+                    message,
+                    html: htmlContent
+                });
+            } catch (error) {
+                console.error('Failed to send wedding status update email', error);
+            }
+        }
 
         return res.status(200).json({ success: true, message: 'Booking status updated', data: booking });
     } catch (error) {
