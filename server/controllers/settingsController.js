@@ -17,12 +17,12 @@ export const getSettings = async (req, res) => {
 // Update settings
 export const updateSettings = async (req, res) => {
   try {
-    const { hotelName, email, address, phone, website, currency, language, timezone, dateFormat, notifications } = req.body;
+    const { hotelName, email, address, phone, website, currency, language, timezone, dateFormat, notifications, bankAccounts } = req.body;
     
     let settings = await Settings.findOne();
     
     if (!settings) {
-      settings = await Settings.create({ hotelName, email, address, phone, website, currency, language, timezone, dateFormat, notifications });
+      settings = await Settings.create({ hotelName, email, address, phone, website, currency, language, timezone, dateFormat, notifications, bankAccounts });
     } else {
       if (hotelName !== undefined) settings.hotelName = hotelName;
       if (email !== undefined) settings.email = email;
@@ -34,6 +34,7 @@ export const updateSettings = async (req, res) => {
       if (timezone !== undefined) settings.timezone = timezone;
       if (dateFormat !== undefined) settings.dateFormat = dateFormat;
       if (notifications !== undefined) settings.notifications = notifications;
+      if (bankAccounts !== undefined) settings.bankAccounts = bankAccounts;
       await settings.save();
     }
     
