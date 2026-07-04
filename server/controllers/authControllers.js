@@ -834,6 +834,10 @@ export const changePassword = async (req, res) => {
             return res.status(400).json({ success: false, message: 'New passwords do not match' });
         }
 
+        if (currentPassword === newPassword) {
+            return res.status(400).json({ success: false, message: 'New password cannot be the same as the current password' });
+        }
+
         const user = await User.findById(req.user._id).select('+password');
 
         const isMatch = await user.comparePassword(currentPassword);
