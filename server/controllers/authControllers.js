@@ -464,7 +464,7 @@ export const updateMe = async (req, res) => {
         const user = await User.findByIdAndUpdate(
             req.user.id,
             { name, email, phone, address, emergencyContact },
-            { new: true, runValidators: true }
+            { returnDocument: 'after', runValidators: true }
         );
 
         res.status(200).json({
@@ -515,7 +515,7 @@ export const deactivateUser = async (req, res) => {
         const user = await User.findByIdAndUpdate(
             req.params.id,
             { status },
-            { new: true, runValidators: true }
+            { returnDocument: 'after', runValidators: true }
         );
 
         if (!user) {

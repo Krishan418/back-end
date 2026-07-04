@@ -291,7 +291,7 @@ export const createRoom = async (req, res) => {
 export const updateRoom = async (req, res) => {
 	try {
 		const room = await Room.findByIdAndUpdate(req.params.id, req.body, {
-			new: true,
+			returnDocument: 'after',
 			runValidators: true //Prevent invalid data.
 		});
 
