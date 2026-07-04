@@ -13,7 +13,6 @@ const menuItemSchema = new mongoose.Schema(
       type: String, 
       required: true, 
       trim: true,
-      enum: ["Main Course", "Appetizers", "Desserts", "Beverages", "Breakfast", "Snacks", "Bites", "Chef's Specialty"], 
       index: true   
     },
     price: { 
@@ -27,8 +26,8 @@ const menuItemSchema = new mongoose.Schema(
     },
     portions: [
       {
-        portionType: { type: String, enum: ["Full", "Half"] },
-        price: { type: Number, min: 0 }
+        portionType: { type: String, required: true },
+        price: { type: Number, min: 0, required: true }
       }
     ],
     isAvailable: { 

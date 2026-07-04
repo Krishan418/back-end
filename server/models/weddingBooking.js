@@ -48,7 +48,7 @@ const weddingBookingSchema = new mongoose.Schema(
         endTime: { type: String, required: [true, 'End time is required'] },
 
         // Catering - Wedding packages OR Event individual meals
-        cateringPackage: { type: String, enum: ['Silver', 'Gold', 'Platinum', 'Custom'], default: 'Custom' },
+        cateringPackage: { type: String, enum: ['Lunch With Pool', 'Menu I', 'Menu II', '100 Pax Package', '150 Pax Package', '200 Pax Package', '250 Pax Package', 'Custom'], default: 'Custom' },
         customPackagePrice: { type: Number, default: 0 },
         customPackageNotes: { type: String, default: '' },
         selectedMeals: [{ type: String }],

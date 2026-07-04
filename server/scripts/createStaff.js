@@ -18,6 +18,7 @@ const createStaff = async () => {
                 password: 'reception123',
                 role: 'receptionist',
                 phone: '1111111111',
+                nic: '199500000001',
                 isVerified: true
             },
             {
@@ -26,6 +27,7 @@ const createStaff = async () => {
                 password: 'cashier123',
                 role: 'cashier',
                 phone: '2222222222',
+                nic: '199500000002',
                 isVerified: true
             }
         ];

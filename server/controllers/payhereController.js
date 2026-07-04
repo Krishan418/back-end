@@ -2,6 +2,7 @@ import crypto from "crypto";
 import Booking from "../models/booking.js";
 import WeddingBooking from "../models/weddingBooking.js";
 import Order from "../models/order.js";
+import Payment from "../models/payment.js";
 
 // Helper to generate MD5 Hash
 const generateMD5 = (string) => {
@@ -87,6 +88,8 @@ export const handlePayHereNotification = async (req, res) => {
     // 3. Process the payment if status_code is 2 (Success)
     if (status_code === "2") {
       const type = custom_1 || "room"; // fallback to room
+      let userId = null;
+      let onModelType = "Booking";
 
       if (type === "room") {
         // Update Room Booking
@@ -95,14 +98,18 @@ export const handlePayHereNotification = async (req, res) => {
           booking.status = "confirmed";
           booking.paymentStatus = "Paid";
           await booking.save();
+          userId = booking.user;
+          onModelType = "Booking";
         }
       } else if (type === "wedding") {
         // Update Wedding Booking
         const booking = await WeddingBooking.findById(order_id);
         if (booking) {
           booking.bookingStatus = "confirmed";
-          booking.paymentStatus = "Paid";
+          booking.paymentStatus = "Fully Paid"; // Assuming full payment via PayHere
           await booking.save();
+          userId = booking.userId;
+          onModelType = "WeddingBooking";
         }
       } else if (type === "order") {
         // Update Restaurant Order
@@ -111,7 +118,22 @@ export const handlePayHereNotification = async (req, res) => {
           order.paymentStatus = "Paid";
           order.orderStatus = "Completed";
           await order.save();
+          userId = order.user;
+          onModelType = "Order";
         }
+      }
+
+      try {
+        await Payment.create({
+          amount: parseFloat(payhere_amount),
+          method: 'Online',
+          status: 'Completed',
+          user: userId || "000000000000000000000000", // Fallback for guest
+          referenceId: order_id,
+          onModel: onModelType
+        });
+      } catch (err) {
+        console.error("Failed to create Payment log:", err);
       }
     }
 

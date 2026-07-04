@@ -458,8 +458,6 @@ export const refresh = async (req, res) => {
             return res.status(401).json({ success: false, message: 'User not found' });
         }
 
-        // Generate a new Access Token (50 min)
-
         const newAccessToken = generateAccessToken(user._id, user.role);
 
         res.status(200).json({
