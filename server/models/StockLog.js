@@ -7,14 +7,24 @@ const stockLogSchema = new mongoose.Schema(
       ref: "Inventory", 
       required: true 
     },
+    logType: {
+      type: String,
+      enum: ["Issue", "Restock"],
+      default: "Issue",
+      required: true
+    },
     department: { 
       type: String, 
-      required: true,
-      enum: ["Restaurant", "Weddings", "Pool", "Other"] 
+      enum: ["Restaurant Kitchen", "Wedding Kitchen", "Main Store"],
+      required: function() { return this.logType === 'Issue'; }
     },
     issuedQuantity: { 
       type: Number, 
-      required: true 
+      default: 0 
+    },
+    restockQuantity: {
+      type: Number,
+      default: 0
     },
     returnedQuantity: { 
       type: Number, 
@@ -30,7 +40,7 @@ const stockLogSchema = new mongoose.Schema(
     },
     status: { 
       type: String, 
-      enum: ["Issued", "Settled"], 
+      enum: ["Issued", "Settled", "Completed"], 
       default: "Issued" 
     },
     notes: String
