@@ -8,7 +8,8 @@ import {
     updateRoom,
     deleteRoom,
     restoreRoom,
-    updateRoomAvailability
+    updateRoomAvailability,
+    getAvailableRoomNumbers
 } from '../controllers/roomController.js';
 
 import { protect, authorize } from '../middleware/authMiddleware.js';
@@ -19,6 +20,7 @@ router.get('/admin/list', protect, authorize('admin', 'manager', 'receptionist',
 router.get('/admin/stats', protect, authorize('admin', 'manager', 'receptionist', 'reception'), getRoomAdminStats);
 
 router.get('/', getRooms);//Anyone can view available rooms 
+router.get('/:id/available-numbers', getAvailableRoomNumbers);
 router.get('/:id', getRoomById);
 
 router.post('/', protect, authorize('admin', 'manager'), createRoom);

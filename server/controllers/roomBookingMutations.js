@@ -1,6 +1,7 @@
 import Booking from '../models/booking.js';
 import Room from '../models/room.js';
 import sendEmail from '../utils/email.js';
+import Settings from '../models/Settings.js';
 import {
 	CANCELLABLE_BY_USER,
 	isValidStatusTransition,
@@ -60,6 +61,13 @@ const getCalculatedStayMode = (stayMode, slots, checkInType, checkOutType) => {
 const sendBookingCancellationEmail = async (booking, actionLabel = 'cancelled') => {
 	if (!booking?.email) return;
 
+	// Load settings to check notification preferences
+	const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
+	if (settings.notifications?.newBookings === false) {
+		console.log('Skipping booking cancellation email due to settings.');
+		return;
+	}
+
 	const roomRecord = booking.room?.name ? booking.room : await Room.findById(booking.room).select('name');
 	const roomName = roomRecord?.name || 'your room booking';
 	const bookingRef = booking._id ? String(booking._id).slice(-8).toUpperCase() : 'N/A';
@@ -97,14 +105,15 @@ export const createBooking = async (req, res) => {
 			decorationItems,
 			checkInType,
 			checkOutType,
-			stayMode
+			stayMode,
+			roomNumber
 		} = req.body;
 
 		//Required Fields Validation
-		if (!roomId || !checkInDate || !checkOutDate || !guests || !fullName || !email) {
+		if (!roomId || !checkInDate || !checkOutDate || !guests || !fullName || !email || !roomNumber) {
 			return res.status(400).json({
 				success: false,
-				message: 'Missing required booking fields'
+				message: 'Missing required booking fields (including roomNumber)'
 			});
 		}
 
@@ -215,7 +224,8 @@ export const createBooking = async (req, res) => {
 			checkInType: checkInType || 'Day',
 			checkOutType: checkOutType || 'Night',
 			startIndex,
-			endIndex
+			endIndex,
+			roomNumber
 		});
 
 		const populatedBooking = await Booking.findById(booking._id).populate('room', 'name price image');
@@ -331,12 +341,17 @@ export const updateBookingStatus = async (req, res) => {
 			}
 
 			if (subject && message && htmlContent) {
-				await sendEmail({
-					email: updatedBooking.email,
-					subject,
-					message,
-					html: htmlContent
-				});
+				const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
+				if (settings.notifications?.newBookings !== false) {
+					await sendEmail({
+						email: updatedBooking.email,
+						subject,
+						message,
+						html: htmlContent
+					});
+				} else {
+					console.log('Skipping booking status update email due to settings.');
+				}
 			}
 		} catch (error) {
 			console.error('Failed to send status update email', error);
