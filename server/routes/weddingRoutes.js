@@ -15,6 +15,7 @@ import {
     updateHall,
     deleteHall
 } from '../controllers/weddingControllers.js';
+import { getPackages, updatePackage, createPackage, deletePackage } from '../controllers/weddingPackageController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -23,6 +24,7 @@ const router = express.Router();
 router.get('/halls/availability', getHallAvailability);
 router.get('/halls/booked-dates', getMonthlyBookedDates);
 router.get('/halls', getHalls);
+router.get('/packages', getPackages);
 
 // Protected routes
 router.get('/my-bookings', protect, getMyBookings);
@@ -38,5 +40,8 @@ router.delete('/halls/:id', protect, authorize('admin'), deleteHall);
 router.put('/bookings/:id/status', protect, authorize('admin', 'receptionist'), updateBookingStatus);
 router.put('/bookings/:id/payment', protect, authorize('admin', 'receptionist'), addPayment);
 router.delete('/bookings/:id', protect, authorize('admin'), deleteBookingRequest);
+router.post('/packages', protect, authorize('admin'), createPackage);
+router.put('/packages/:id', protect, authorize('admin'), updatePackage);
+router.delete('/packages/:id', protect, authorize('admin'), deletePackage);
 
 export default router;
