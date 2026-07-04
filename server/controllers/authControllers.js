@@ -4,6 +4,9 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import sendEmail from '../utils/email.js';
 import Settings from '../models/Settings.js';
+import { OAuth2Client } from 'google-auth-library';
+
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 
 const getOTPTemplate = (otp, name, hotelName = 'Hotel Janro') => {
