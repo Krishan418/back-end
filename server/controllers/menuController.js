@@ -97,6 +97,13 @@ export const createMenuItem = asyncHandler(async (req, res) => {
 
 // Update an existing menu item
 export const updateMenuItem = asyncHandler(async (req, res) => {
+  const item = await MenuItem.findById(req.params.id);
+  
+  if (!item) {
+    res.status(404);
+    throw new Error("Menu item not found");
+  }
+
   const updateData = { ...req.body };
 
   if (req.file) {
@@ -122,28 +129,38 @@ export const updateMenuItem = asyncHandler(async (req, res) => {
         price: Number(p.price)
       }));
     }
-  } else {
-    updateData.portions = [];
-    if (updateData.price != null) {
-      updateData.price = Number(updateData.price);
+    item.hasPortions = true;
+    item.portions = updateData.portions;
+    item.price = undefined; // clear price since it has portions
+  } else if (updateData.hasPortions === false) {
+    item.hasPortions = false;
+    item.portions = [];
+    if (updateData.price != null && updateData.price !== "") {
+      item.price = Number(updateData.price);
     }
+  } else {
+      // If hasPortions wasn't updated, just update price if provided
+      if (updateData.price != null && updateData.price !== "") {
+          item.price = Number(updateData.price);
+      }
   }
 
-  if (updateData.inventoryItem === "") updateData.inventoryItem = null;
-  if (updateData.prepTime != null) updateData.prepTime = Number(updateData.prepTime);
+  if (updateData.name !== undefined) item.name = updateData.name;
+  if (updateData.category !== undefined) item.category = updateData.category;
+  if (updateData.description !== undefined) item.description = updateData.description;
+  if (updateData.image !== undefined) item.image = updateData.image;
+  
+  if (updateData.inventoryItem !== undefined) {
+      item.inventoryItem = updateData.inventoryItem === "" ? null : updateData.inventoryItem;
+  }
+  if (updateData.prepTime != null && updateData.prepTime !== "") {
+      item.prepTime = Number(updateData.prepTime);
+  }
   if (updateData.isAvailable !== undefined) {
-    updateData.isAvailable = updateData.isAvailable === 'true' || updateData.isAvailable === true;
+    item.isAvailable = updateData.isAvailable === 'true' || updateData.isAvailable === true;
   }
 
-  const item = await MenuItem.findByIdAndUpdate(req.params.id, updateData, {
-    returnDocument: 'after',
-    runValidators: true
-  });
-
-  if (!item) {
-    res.status(404);
-    throw new Error("Menu item not found");
-  }
+  await item.save();
   res.status(200).json(item);
 });
 
