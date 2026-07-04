@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import sendEmail from '../utils/email.js';
 import Settings from '../models/Settings.js';
+import { generateSecret, verifyTOTP } from '../utils/totp.js';
 
 
 const getOTPTemplate = (otp, name, hotelName = 'Hotel Janro') => {
@@ -310,6 +311,15 @@ export const login = async (req, res) => {
             return res.status(401).json({ 
                 success: false,
                 message: 'Invalid email or password' 
+            });
+        }
+
+        // Check if two-factor is active
+        if (user.twoFactorEnabled) {
+            return res.status(200).json({
+                success: true,
+                twoFactorRequired: true,
+                userId: user._id
             });
         }
 
@@ -973,6 +983,113 @@ export const verifyEmail = async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Email verified successfully',
+            data: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                phone: user.phone,
+                role: user.role,
+                token: accessToken,
+                refreshToken
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Setup 2FA
+export const setup2FA = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        const secret = generateSecret();
+        const email = user.email;
+        const otpauthUrl = `otpauth://totp/HotelJanro:${encodeURIComponent(email)}?secret=${secret}&issuer=HotelJanro`;
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpauthUrl)}`;
+
+        res.status(200).json({
+            success: true,
+            secret,
+            qrCodeUrl
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Verify & Enable 2FA
+export const verify2FA = async (req, res) => {
+    try {
+        const { secret, code } = req.body;
+        
+        if (!secret || !code) {
+            return res.status(400).json({ success: false, message: 'Secret and verification code are required' });
+        }
+
+        const isValid = verifyTOTP(secret, code);
+        if (!isValid) {
+            return res.status(400).json({ success: false, message: 'Invalid verification code' });
+        }
+
+        const user = await User.findById(req.user._id).select('+twoFactorSecret');
+        user.twoFactorSecret = secret;
+        user.twoFactorEnabled = true;
+        await user.save({ validateBeforeSave: false });
+
+        res.status(200).json({
+            success: true,
+            message: 'Two-Factor Authentication enabled successfully!'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Disable 2FA
+export const disable2FA = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        user.twoFactorSecret = undefined;
+        user.twoFactorEnabled = false;
+        await user.save({ validateBeforeSave: false });
+
+        res.status(200).json({
+            success: true,
+            message: 'Two-Factor Authentication disabled successfully.'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Verify Login 2FA
+export const verifyLogin2FA = async (req, res) => {
+    try {
+        const { userId, code } = req.body;
+
+        if (!userId || !code) {
+            return res.status(400).json({ success: false, message: 'User ID and verification code are required' });
+        }
+
+        const user = await User.findById(userId).select('+twoFactorSecret');
+        if (!user || !user.twoFactorEnabled) {
+            return res.status(400).json({ success: false, message: 'Invalid request or 2FA not active' });
+        }
+
+        const isValid = verifyTOTP(user.twoFactorSecret, code);
+        if (!isValid) {
+            return res.status(400).json({ success: false, message: 'Invalid verification code' });
+        }
+
+        const accessToken = generateAccessToken(user._id, user.role);
+        const refreshToken = generateRefreshToken(user._id, user.role);
+
+        res.status(200).json({
+            success: true,
             data: {
                 _id: user._id,
                 name: user.name,

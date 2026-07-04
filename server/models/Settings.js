@@ -46,7 +46,13 @@ const settingsSchema = new mongoose.Schema({
     paymentReceived: { type: Boolean, default: true },
     lowInventory: { type: Boolean, default: true },
     staffUpdates: { type: Boolean, default: true }
-  }
+  },
+  bankAccounts: [{
+    accountHolderName: { type: String, required: true },
+    bankName: { type: String, required: true },
+    branchName: { type: String, required: true },
+    accountNumber: { type: String, required: true }
+  }]
 }, { timestamps: true });
 
 const Settings = mongoose.model('Settings', settingsSchema);

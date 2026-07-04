@@ -122,6 +122,14 @@ const userSchema = new mongoose.Schema({
     pendingEmail: String,
     resetPasswordToken: String,
     resetPasswordExpire: Date,
+    twoFactorEnabled: {
+        type: Boolean,
+        default: false
+    },
+    twoFactorSecret: {
+        type: String,
+        select: false
+    },
     createdAt: {
         type: Date,
         default: Date.now
