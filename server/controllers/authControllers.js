@@ -226,38 +226,22 @@ export const register = async (req, res) => {
             isVerified: true
         });
 
-        // Generate & hash 6-digit OTP
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
-        
-        user.verificationOTP = hashedOTP;
-        user.verificationOTPExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
-        await user.save({ validateBeforeSave: false });
-
-        // Fetch settings for hotel name
-        const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
-        const hotelName = settings.hotelName;
-
-        // Send OTP via email
-        const message = `Welcome to ${hotelName}!\n\nYour email verification code is: ${otp}\n\nThis code will expire in 10 minutes.`;
-        const html = getOTPTemplate(otp, user.name, hotelName);
-        
-        try {
-            await sendEmail({
-                email: user.email,
-                subject: `${hotelName} - Verify Your Email`,
-                message,
-                html,
-                hotelName
-            });
-        } catch (error) {
-            console.error("Failed to send OTP email", error);
-        }
+        // Generate JWT tokens
+        const accessToken = generateAccessToken(user._id, user.role);
+        const refreshToken = generateRefreshToken(user._id, user.role);
 
         res.status(201).json({
             success: true,
-            requireVerification: true,
-            message: "Registration successful. Please verify your email."
+            message: "Registration successful.",
+            data: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                phone: user.phone,
+                role: user.role,
+                token: accessToken,
+                refreshToken
+            }
         });
     } catch (error) {
         res.status(500).json({ 
