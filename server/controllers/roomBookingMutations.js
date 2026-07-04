@@ -105,14 +105,15 @@ export const createBooking = async (req, res) => {
 			decorationItems,
 			checkInType,
 			checkOutType,
-			stayMode
+			stayMode,
+			roomNumber
 		} = req.body;
 
 		//Required Fields Validation
-		if (!roomId || !checkInDate || !checkOutDate || !guests || !fullName || !email) {
+		if (!roomId || !checkInDate || !checkOutDate || !guests || !fullName || !email || !roomNumber) {
 			return res.status(400).json({
 				success: false,
-				message: 'Missing required booking fields'
+				message: 'Missing required booking fields (including roomNumber)'
 			});
 		}
 
@@ -223,7 +224,8 @@ export const createBooking = async (req, res) => {
 			checkInType: checkInType || 'Day',
 			checkOutType: checkOutType || 'Night',
 			startIndex,
-			endIndex
+			endIndex,
+			roomNumber
 		});
 
 		const populatedBooking = await Booking.findById(booking._id).populate('room', 'name price image');
