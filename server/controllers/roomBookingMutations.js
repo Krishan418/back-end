@@ -199,7 +199,7 @@ export const createBooking = async (req, res) => {
 		}
 
 		// Decorations are allowed only for honeymoon room types.
-		const supportsDecorations = String(room.name || '').toLowerCase().includes('honeymoon');
+		const supportsDecorations = String(room.name || '').toLowerCase().includes('honeymoon') || String(room.name || '').toLowerCase().includes('wedding');
 		const sanitizedDecorationItems = supportsDecorations ? sanitizeDecorationItems(decorationItems) : [];
 		const decorationTotal = calculateDecorationTotal(sanitizedDecorationItems);
 
@@ -382,7 +382,11 @@ export const cancelMyBooking = async (req, res) => {
 			});
 		}
 
-		if (!booking.user || booking.user.toString() !== req.user._id.toString()) {
+		const isAdminOrReception = req.user.role === 'admin' || req.user.role === 'reception';
+		const isOwner = (booking.user && booking.user.toString() === req.user._id.toString()) || 
+						(booking.email && req.user.email && booking.email.toLowerCase() === req.user.email.toLowerCase());
+
+		if (!isAdminOrReception && !isOwner) {
 			return res.status(403).json({
 				success: false,
 				message: 'Not authorized to cancel this booking'
@@ -529,7 +533,7 @@ export const updateBookingDetails = async (req, res) => {
 		// Handle decorations update (only for honeymoon suite)
 		const room = await Room.findById(booking.room);
 		if (room && decorationItems) {
-			const supportsDecorations = String(room.name || '').toLowerCase().includes('honeymoon');
+			const supportsDecorations = String(room.name || '').toLowerCase().includes('honeymoon') || String(room.name || '').toLowerCase().includes('wedding');
 			const sanitizedDecorationItems = supportsDecorations ? sanitizeDecorationItems(decorationItems) : [];
 			const decorationTotal = calculateDecorationTotal(sanitizedDecorationItems);
 			
