@@ -101,7 +101,7 @@ const getOTPTemplate = (otp, name, hotelName = 'Hotel Janro') => {
 };
 
 
-const getStaffWelcomeTemplate = (name, role, password, hotelName = 'Hotel Janro') => {
+const getStaffWelcomeTemplate = (name, email, role, password, hotelName = 'Hotel Janro') => {
     return `
     <!DOCTYPE html>
     <html>
@@ -171,11 +171,11 @@ const getStaffWelcomeTemplate = (name, role, password, hotelName = 'Hotel Janro'
                 
                 <div class="info-box">
                     <p style="margin-top: 0;"><strong>Your Account Credentials:</strong></p>
-                    <p><strong>Email:</strong> ${name}</p>
+                    <p><strong>Email Address:</strong> ${email}</p>
                     <p><strong>Temporary Password:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px;">${password}</code></p>
                 </div>
                 
-                <p>Please log in to the admin dashboard using your email and the temporary password provided above. For security reasons, we strongly recommend changing your password immediately after your first login.</p>
+                <p>Please log in using your email and the temporary password provided above. For security reasons, we strongly recommend changing your password immediately after your first login.</p>
                 
                 <p>We look forward to working with you and seeing your contributions to our success!</p>
             </div>
@@ -278,7 +278,8 @@ export const login = async (req, res) => {
             });
         }
 
-        const user = await User.findOne({ email }).select('+password');
+        const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+        const user = await User.findOne({ email: normalizedEmail }).select('+password');
         if (!user) {
             return res.status(401).json({ 
                 success: false,
@@ -545,7 +546,7 @@ export const createStaff = async (req, res) => {
         const { 
             name, email, phone, role, department, salary, joinDate, status,
             nic, employeeId, address, emergencyContact, emergencyContactPhone,
-            employmentType, hourlyRate, startTime, endTime, additionalHours,
+            employmentType, hourlyRate, startTime, endTime, additionalHours, bonus,
             password
         } = req.body;
         const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -560,19 +561,22 @@ export const createStaff = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Please provide a valid email address' });
         }
 
-        // Phone Validation (Exactly 10 digits)
-        const phoneRegex = /^\d{10}$/;
+        // Phone Validation (Allow full phone number with international country codes)
+        const phoneRegex = /^\+?[0-9\s\-()]{9,20}$/;
         if (phone && !phoneRegex.test(phone)) {
-            return res.status(400).json({ success: false, message: 'Phone number must be exactly 10 digits' });
+            return res.status(400).json({ success: false, message: 'Please provide a valid phone number' });
         }
 
         // NIC Validation (9 digits + V/X or 12 digits)
+        if (!nic) {
+            return res.status(400).json({ success: false, message: 'NIC number is required' });
+        }
         const nicRegex = /^(?:\d{9}[vVxX]|\d{12})$/;
-        if (nic && !nicRegex.test(nic)) {
+        if (!nicRegex.test(nic)) {
             return res.status(400).json({ success: false, message: 'Invalid NIC format. Use 9 digits + V/X or 12 digits' });
         }
 
-        const allowedRoles = ['staff', 'manager', 'receptionist', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance', 'admin'];
+        const allowedRoles = ['staff', 'manager', 'receptionist', 'cashier', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance', 'admin'];
         const assignedRole = (role || 'staff').toLowerCase();
         if (!allowedRoles.includes(assignedRole)) {
             return res.status(400).json({ success: false, message: 'Invalid role for this endpoint' });
@@ -591,6 +595,23 @@ export const createStaff = async (req, res) => {
         const existing = await User.findOne({ email: normalizedEmail });
         if (existing) return res.status(400).json({ success: false, message: 'User already exists' });
 
+        if (joinDate && new Date(joinDate) > new Date()) {
+            return res.status(400).json({ success: false, message: 'Join date cannot be in the future' });
+        }
+
+        let finalEmployeeId = employeeId;
+        if (!finalEmployeeId) {
+            let count = await User.countDocuments({ role: { $in: ['staff', 'manager', 'receptionist', 'cashier', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance', 'admin'] } });
+            let generatedId = `STF-${String(count + 1).padStart(3, '0')}`;
+            let exists = await User.findOne({ employeeId: generatedId });
+            while (exists) {
+                count++;
+                generatedId = `STF-${String(count + 1).padStart(3, '0')}`;
+                exists = await User.findOne({ employeeId: generatedId });
+            }
+            finalEmployeeId = generatedId;
+        }
+
         const tempPassword = password || `Staff@${Math.random().toString(36).slice(2,8)}`;
 
         const user = await User.create({
@@ -605,7 +626,7 @@ export const createStaff = async (req, res) => {
             joinDate,
             status: status || 'active',
             nic,
-            employeeId,
+            employeeId: finalEmployeeId,
             address,
             emergencyContact,
             emergencyContactPhone,
@@ -614,6 +635,7 @@ export const createStaff = async (req, res) => {
             startTime,
             endTime,
             additionalHours: additionalHours || 0,
+            bonus: bonus || 0,
             isVerified: true
         });
 
@@ -622,23 +644,40 @@ export const createStaff = async (req, res) => {
         const hotelName = settings.hotelName;
 
         // Send Welcome email with credentials
-        const message = `Congratulations ${name}! Welcome to the ${hotelName} team as a ${assignedRole}. Your temporary password is: ${tempPassword}`;
-        const html = getStaffWelcomeTemplate(name, assignedRole, tempPassword, hotelName);
+        const message = `Congratulations ${name}! Welcome to the ${hotelName} team as a ${assignedRole}. Your login email is: ${normalizedEmail} and temporary password is: ${tempPassword}`;
+        const html = getStaffWelcomeTemplate(name, normalizedEmail, assignedRole, tempPassword, hotelName);
         
-        try {
-            await sendEmail({
+        // Check if SMTP email credentials are configured
+        const emailHost = process.env.EMAIL_HOST || process.env.SMTP_HOST;
+        const emailPort = process.env.EMAIL_PORT || process.env.SMTP_PORT;
+        const emailUser = process.env.EMAIL_USER || process.env.SMTP_USER;
+        const emailPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+        const smtpReady = Boolean(
+            emailHost &&
+            emailPort &&
+            emailUser &&
+            emailPass &&
+            !['localhost', '127.0.0.1'].includes(String(emailHost))
+        );
+
+        let emailSent = false;
+        const canSendWelcomeEmail = settings.notifications?.staffUpdates !== false;
+        if (smtpReady && canSendWelcomeEmail) {
+            emailSent = true;
+            // Send email in the background asynchronously without awaiting it
+            sendEmail({
                 email: user.email,
                 subject: `Congratulations! Welcome to ${hotelName}`,
                 message,
-                html,
-                hotelName
+                html
+            }).catch(emailError => {
+                console.error('Failed to send welcome email:', emailError);
             });
-        } catch (error) {
-            console.error("Failed to send staff welcome email", error);
         }
 
         res.status(201).json({
             success: true,
+            emailSent,
             data: {
                 _id: user._id,
                 name: user.name,
@@ -658,7 +697,9 @@ export const createStaff = async (req, res) => {
                 hourlyRate: user.hourlyRate,
                 startTime: user.startTime,
                 endTime: user.endTime,
-                additionalHours: user.additionalHours
+                additionalHours: user.additionalHours,
+                bonus: user.bonus,
+                tempPassword
             }
         });
     } catch (error) {
@@ -672,7 +713,7 @@ export const updateUser = async (req, res) => {
         const allowed = [
             'name', 'phone', 'role', 'department', 'salary', 'joinDate', 'status', 'email',
             'nic', 'employeeId', 'address', 'emergencyContact', 'emergencyContactPhone',
-            'employmentType', 'hourlyRate', 'startTime', 'endTime', 'additionalHours'
+            'employmentType', 'hourlyRate', 'startTime', 'endTime', 'additionalHours', 'bonus'
         ];
         const updates = {};
         for (const key of allowed) {
@@ -689,18 +730,26 @@ export const updateUser = async (req, res) => {
 
         // Phone Validation if being updated
         if (updates.phone) {
-            const phoneRegex = /^\d{10}$/;
+            const phoneRegex = /^\+?[0-9\s\-()]{9,20}$/;
             if (!phoneRegex.test(updates.phone)) {
-                return res.status(400).json({ success: false, message: 'Phone number must be exactly 10 digits' });
+                return res.status(400).json({ success: false, message: 'Please provide a valid phone number' });
             }
         }
 
         // NIC Validation if being updated
-        if (updates.nic) {
+        if (updates.nic !== undefined) {
+            if (!updates.nic) {
+                return res.status(400).json({ success: false, message: 'NIC number is required' });
+            }
             const nicRegex = /^(?:\d{9}[vVxX]|\d{12})$/;
             if (!nicRegex.test(updates.nic)) {
                 return res.status(400).json({ success: false, message: 'Invalid NIC format' });
             }
+        }
+
+        // Join Date validation if being updated
+        if (updates.joinDate && new Date(updates.joinDate) > new Date()) {
+            return res.status(400).json({ success: false, message: 'Join date cannot be in the future' });
         }
 
         const user = await User.findById(req.params.id);
@@ -741,7 +790,8 @@ export const updateUser = async (req, res) => {
             hourlyRate: user.hourlyRate,
             startTime: user.startTime,
             endTime: user.endTime,
-            additionalHours: user.additionalHours
+            additionalHours: user.additionalHours,
+            bonus: user.bonus
         }});
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });

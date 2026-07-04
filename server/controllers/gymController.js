@@ -138,14 +138,18 @@ export const createGymPass = async (req, res) => {
           </div>
         `;
 
-        await sendEmail({
-          email: guestEmail,
-          subject,
-          message: textMessage,
-          html,
-          hotelName
-        });
-        console.log("Pass QR code email sent successfully to:", guestEmail);
+        if (settings.notifications?.newBookings !== false) {
+          await sendEmail({
+            email: guestEmail,
+            subject,
+            message: textMessage,
+            html,
+            hotelName
+          });
+          console.log("Pass QR code email sent successfully to:", guestEmail);
+        } else {
+          console.log("Skipping gym pass email due to settings.");
+        }
       } catch (emailError) {
         console.error('Failed to send pass QR code email:', emailError);
       }
@@ -596,15 +600,20 @@ export const createGymMember = async (req, res) => {
           </div>
         `;
 
-        await sendEmail({
-          email,
-          subject,
-          message: textMessage,
-          html,
-          hotelName
-        });
-      } catch (emailError) {
-        console.error('Failed to send welcome email to gym member:', emailError);
+        if (settings.notifications?.newBookings !== false) {
+          await sendEmail({
+            email,
+            subject,
+            message: textMessage,
+            html,
+            hotelName
+          });
+          console.log("Gym member welcome email sent successfully to:", email);
+        } else {
+          console.log("Skipping gym member welcome email due to settings.");
+        }
+      } catch (error) {
+        console.error('Error sending gym member welcome email:', error.message);
       }
     }
 

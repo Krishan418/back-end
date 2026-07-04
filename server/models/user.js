@@ -49,6 +49,7 @@ const userSchema = new mongoose.Schema({
     },
     nic: {
         type: String,
+        required: [true, 'NIC is required'],
         unique: true,
         sparse: true,
         trim: true
@@ -85,6 +86,10 @@ const userSchema = new mongoose.Schema({
         trim: true
     },
     additionalHours: {
+        type: Number,
+        default: 0
+    },
+    bonus: {
         type: Number,
         default: 0
     },

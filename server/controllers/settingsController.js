@@ -17,22 +17,23 @@ export const getSettings = async (req, res) => {
 // Update settings
 export const updateSettings = async (req, res) => {
   try {
-    const { hotelName, email, address, phone, website, currency, language, timezone, dateFormat } = req.body;
+    const { hotelName, email, address, phone, website, currency, language, timezone, dateFormat, notifications } = req.body;
     
     let settings = await Settings.findOne();
     
     if (!settings) {
-      settings = await Settings.create({ hotelName, email, address, phone, website, currency, language, timezone, dateFormat });
+      settings = await Settings.create({ hotelName, email, address, phone, website, currency, language, timezone, dateFormat, notifications });
     } else {
-      settings.hotelName = hotelName || settings.hotelName;
-      settings.email = email || settings.email;
-      settings.address = address || settings.address;
-      settings.phone = phone || settings.phone;
-      settings.website = website || settings.website;
-      settings.currency = currency || settings.currency;
-      settings.language = language || settings.language;
-      settings.timezone = timezone || settings.timezone;
-      settings.dateFormat = dateFormat || settings.dateFormat;
+      if (hotelName !== undefined) settings.hotelName = hotelName;
+      if (email !== undefined) settings.email = email;
+      if (address !== undefined) settings.address = address;
+      if (phone !== undefined) settings.phone = phone;
+      if (website !== undefined) settings.website = website;
+      if (currency !== undefined) settings.currency = currency;
+      if (language !== undefined) settings.language = language;
+      if (timezone !== undefined) settings.timezone = timezone;
+      if (dateFormat !== undefined) settings.dateFormat = dateFormat;
+      if (notifications !== undefined) settings.notifications = notifications;
       await settings.save();
     }
     
