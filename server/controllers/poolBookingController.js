@@ -68,6 +68,14 @@ export const createPoolBooking = async (req, res) => {
             });
         }
 
+        // Validate phone format
+        if (guestPhone && !/^(?:\+94|0)?7[0-9]{8}$/.test(guestPhone)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please provide a valid Sri Lankan phone number (e.g., 0771234567 or +94771234567).'
+            });
+        }
+
         // Disallow booking dates in the past (compare dates at midnight)
         const bookingDate = new Date(date);
         bookingDate.setHours(0, 0, 0, 0);
@@ -179,6 +187,15 @@ export const updatePoolBooking = async (req, res) => {
 
         if (!id) {
             return res.status(400).json({ success: false, message: 'Booking ID is required' });
+        }
+
+        if (guestPhone !== undefined) {
+            if (!/^(?:\+94|0)?7[0-9]{8}$/.test(guestPhone)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Please provide a valid Sri Lankan phone number (e.g., 0771234567 or +94771234567).'
+                });
+            }
         }
 
         const updateData = { guestName, guestEmail, guestPhone, roomNumber, timeSlot };

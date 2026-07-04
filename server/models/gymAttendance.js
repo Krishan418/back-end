@@ -5,7 +5,12 @@ const gymAttendanceSchema = new mongoose.Schema({
   passId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'GymPass',
-    required: true
+    required: false
+  },
+  memberId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'GymMember',
+    required: false
   },
   guestName: {
     type: String,
@@ -22,6 +27,10 @@ const gymAttendanceSchema = new mongoose.Schema({
   checkInTime: {
     type: Date,
     default: Date.now
+  },
+  checkOutTime: {
+    type: Date,
+    required: false
   }
 });
 

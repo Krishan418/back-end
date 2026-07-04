@@ -40,6 +40,12 @@ const settingsSchema = new mongoose.Schema({
   dateFormat: {
     type: String,
     default: 'DD/MM/YYYY'
+  },
+  notifications: {
+    newBookings: { type: Boolean, default: true },
+    paymentReceived: { type: Boolean, default: true },
+    lowInventory: { type: Boolean, default: true },
+    staffUpdates: { type: Boolean, default: true }
   }
 }, { timestamps: true });
 
