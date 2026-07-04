@@ -9,7 +9,7 @@ const settingsSchema = new mongoose.Schema({
   email: {
     type: String,
     required: true,
-    default: 'info@hoteljanro.com'
+    default: 'hoteljanro@gmail.com'
   },
   address: {
     type: String,

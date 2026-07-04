@@ -32,6 +32,14 @@ export const createBooking = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid eventDate format. Use YYYY-MM-DD' });
         }
 
+        // Reject past dates
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        requestedDate.setHours(0, 0, 0, 0);
+        if (requestedDate < today) {
+            return res.status(400).json({ success: false, message: 'Event date cannot be in the past. Please choose a future date.' });
+        }
+
         if (Number(guestCount) < 1) {
             return res.status(400).json({ success: false, message: 'guestCount must be at least 1' });
         }
