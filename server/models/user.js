@@ -49,7 +49,6 @@ const userSchema = new mongoose.Schema({
     },
     nic: {
         type: String,
-        required: [true, 'NIC is required'],
         unique: true,
         sparse: true,
         trim: true
