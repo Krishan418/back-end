@@ -27,6 +27,10 @@ const gymAttendanceSchema = new mongoose.Schema({
   checkInTime: {
     type: Date,
     default: Date.now
+  },
+  checkOutTime: {
+    type: Date,
+    required: false
   }
 });
 

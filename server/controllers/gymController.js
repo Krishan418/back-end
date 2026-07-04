@@ -16,10 +16,28 @@ export const createGymPass = async (req, res) => {
       validDays = 1
     } = req.body || {};
 
-    if (!passType || !guestName || !guestPhone) {
+    if (!passType || !guestName || !guestPhone || !guestEmail) {
       return res.status(400).json({
         success: false,
-        message: 'passType, guestName, and guestPhone are required.'
+        message: 'passType, guestName, guestPhone, and guestEmail are required.'
+      });
+    }
+
+    // Phone validation
+    const phoneRegex = /^(?:\+94|0)?7[0-9]{8}$/;
+    if (!phoneRegex.test(guestPhone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid Sri Lankan mobile number (e.g. 0771234567 or +94771234567).'
+      });
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(guestEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email format.'
       });
     }
 
@@ -209,8 +227,41 @@ export const verifyGymScan = async (req, res) => {
         });
       }
 
-      // Validation successful! Record attendance
-      const attendance = await GymAttendance.create({
+      // Check for same day check-in to update check-out time
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const todayAttendances = await GymAttendance.find({
+        memberId: member._id,
+        checkInTime: { $gte: startOfDay, $lte: endOfDay }
+      });
+
+      const activeAttendance = todayAttendances.find(a => !a.checkOutTime);
+      const completedAttendances = todayAttendances.filter(a => a.checkOutTime);
+
+      if (activeAttendance) {
+        // Checking out
+        activeAttendance.checkOutTime = new Date();
+        await activeAttendance.save();
+        return res.status(200).json({
+          success: true,
+          message: `Goodbye, ${member.name}! Check-out successful.`,
+          attendance: activeAttendance,
+          member
+        });
+      }
+
+      if (completedAttendances.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Access denied! QR code has already been used for check-in and check-out today.`
+        });
+      }
+
+      // Validation successful! Record check-in attendance
+      const newAttendance = await GymAttendance.create({
         memberId: member._id,
         guestName: member.name,
         passType: 'Membership',
@@ -219,8 +270,8 @@ export const verifyGymScan = async (req, res) => {
 
       return res.status(200).json({
         success: true,
-        message: `Welcome, ${member.name}! Access Granted.`,
-        attendance,
+        message: `Welcome, ${member.name}! Check-in successful. Member status is Active.`,
+        attendance: newAttendance,
         member
       });
     }
@@ -254,8 +305,41 @@ export const verifyGymScan = async (req, res) => {
       });
     }
 
-    // Validation successful! Record attendance
-    const attendance = await GymAttendance.create({
+    // Check for same day check-in to update check-out time
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const todayAttendances = await GymAttendance.find({
+      passId: pass._id,
+      checkInTime: { $gte: startOfDay, $lte: endOfDay }
+    });
+
+    const activeAttendance = todayAttendances.find(a => !a.checkOutTime);
+    const completedAttendances = todayAttendances.filter(a => a.checkOutTime);
+
+    if (activeAttendance) {
+      // Checking out
+      activeAttendance.checkOutTime = new Date();
+      await activeAttendance.save();
+      return res.status(200).json({
+        success: true,
+        message: `Goodbye, ${pass.guestName}! Check-out successful.`,
+        attendance: activeAttendance,
+        pass
+      });
+    }
+
+    if (completedAttendances.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Access denied! QR code has already been used for check-in and check-out today.`
+      });
+    }
+
+    // Validation successful! Record check-in attendance
+    const newAttendance = await GymAttendance.create({
       passId: pass._id,
       guestName: pass.guestName,
       passType: pass.passType,
@@ -264,8 +348,8 @@ export const verifyGymScan = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Welcome, ${pass.guestName}! Access Granted.`,
-      attendance,
+      message: `Welcome, ${pass.guestName}! Check-in successful. Pass is valid until ${new Date(pass.validDate).toLocaleString()}.`,
+      attendance: newAttendance,
       pass
     });
   } catch (error) {
@@ -317,6 +401,7 @@ export const updateGymPass = async (req, res) => {
       passType,
       guestName,
       guestPhone,
+      guestEmail,
       roomNumber,
       paymentStatus,
       status,
@@ -331,9 +416,32 @@ export const updateGymPass = async (req, res) => {
       });
     }
 
+    // Phone validation if being updated
+    if (guestPhone) {
+      const phoneRegex = /^(?:\+94|0)?7[0-9]{8}$/;
+      if (!phoneRegex.test(guestPhone)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid Sri Lankan mobile number (e.g. 0771234567 or +94771234567).'
+        });
+      }
+    }
+
+    // Email validation if being updated
+    if (guestEmail) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(guestEmail)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid email format.'
+        });
+      }
+    }
+
     if (passType) pass.passType = passType;
     if (guestName) pass.guestName = guestName;
     if (guestPhone) pass.guestPhone = guestPhone;
+    if (guestEmail !== undefined) pass.guestEmail = guestEmail;
     if (roomNumber !== undefined) pass.roomNumber = roomNumber;
     if (paymentStatus) pass.paymentStatus = paymentStatus;
     if (status) pass.status = status;
@@ -375,10 +483,48 @@ export const createGymMember = async (req, res) => {
       status = 'Active' 
     } = req.body || {};
 
-    if (!name || !phone) {
+    if (!name || !phone || !dob || !nic || !email) {
       return res.status(400).json({
         success: false,
-        message: 'Name and phone number are required.'
+        message: 'Name, phone number, date of birth, NIC/Passport, and email are required.'
+      });
+    }
+
+    // Phone validation
+    const phoneRegex = /^(?:\+94|0)?7[0-9]{8}$/;
+    if (!phoneRegex.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid Sri Lankan mobile number (e.g. 0771234567 or +94771234567).'
+      });
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email format.'
+      });
+    }
+
+    // NIC/Passport validation
+    const nicOrPassport = nic.trim();
+    const nicRegex = /^(?:\d{9}[vVxX]|\d{12})$/;
+    const passportRegex = /^[A-Za-z0-9]{7,12}$/;
+    if (!nicRegex.test(nicOrPassport) && !passportRegex.test(nicOrPassport)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid NIC (9 digits + V/X or 12 digits) or Passport number (7-12 alphanumeric characters).'
+      });
+    }
+
+    // Date of Birth validation
+    const birthDate = new Date(dob);
+    if (isNaN(birthDate.getTime()) || birthDate > new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Date of Birth cannot be in the future.'
       });
     }
 
@@ -513,6 +659,52 @@ export const updateGymMember = async (req, res) => {
         success: false,
         message: 'Gym member not found.'
       });
+    }
+
+    // Phone validation if being updated
+    if (phone) {
+      const phoneRegex = /^(?:\+94|0)?7[0-9]{8}$/;
+      if (!phoneRegex.test(phone)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid Sri Lankan mobile number (e.g. 0771234567 or +94771234567).'
+        });
+      }
+    }
+
+    // Email validation if being updated
+    if (email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid email format.'
+        });
+      }
+    }
+
+    // NIC/Passport validation if being updated
+    if (nic) {
+      const nicOrPassport = nic.trim();
+      const nicRegex = /^(?:\d{9}[vVxX]|\d{12})$/;
+      const passportRegex = /^[A-Za-z0-9]{7,12}$/;
+      if (!nicRegex.test(nicOrPassport) && !passportRegex.test(nicOrPassport)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid NIC (9 digits + V/X or 12 digits) or Passport number (7-12 alphanumeric characters).'
+        });
+      }
+    }
+
+    // Date of Birth validation if being updated
+    if (dob) {
+      const birthDate = new Date(dob);
+      if (isNaN(birthDate.getTime()) || birthDate > new Date()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Date of Birth cannot be in the future.'
+        });
+      }
     }
 
     if (name) member.name = name;

@@ -401,6 +401,16 @@ export const updateUserRole = async (req, res) => {
             });
         }
 
+        if (role.toLowerCase() === 'admin' && user.role.toLowerCase() !== 'admin') {
+            const adminCount = await User.countDocuments({ role: 'admin' });
+            if (adminCount >= 2) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Maximum limit of 2 admins has been reached. Cannot promote another user to admin.'
+                });
+            }
+        }
+
         user.role = role;
         await user.save({ validateBeforeSave: false });
 
@@ -535,7 +545,8 @@ export const createStaff = async (req, res) => {
         const { 
             name, email, phone, role, department, salary, joinDate, status,
             nic, employeeId, address, emergencyContact, emergencyContactPhone,
-            employmentType, hourlyRate, startTime, endTime, additionalHours
+            employmentType, hourlyRate, startTime, endTime, additionalHours,
+            password
         } = req.body;
         const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
@@ -561,16 +572,26 @@ export const createStaff = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid NIC format. Use 9 digits + V/X or 12 digits' });
         }
 
-        const allowedRoles = ['staff', 'manager', 'receptionist', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance'];
+        const allowedRoles = ['staff', 'manager', 'receptionist', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance', 'admin'];
         const assignedRole = (role || 'staff').toLowerCase();
         if (!allowedRoles.includes(assignedRole)) {
             return res.status(400).json({ success: false, message: 'Invalid role for this endpoint' });
         }
 
+        if (assignedRole === 'admin') {
+            const adminCount = await User.countDocuments({ role: 'admin' });
+            if (adminCount >= 2) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Maximum limit of 2 admins has been reached. Cannot create another admin account.'
+                });
+            }
+        }
+
         const existing = await User.findOne({ email: normalizedEmail });
         if (existing) return res.status(400).json({ success: false, message: 'User already exists' });
 
-        const tempPassword = `Staff@${Math.random().toString(36).slice(2,8)}`;
+        const tempPassword = password || `Staff@${Math.random().toString(36).slice(2,8)}`;
 
         const user = await User.create({
             name,
@@ -686,8 +707,16 @@ export const updateUser = async (req, res) => {
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
 
-        if (updates.role && updates.role === 'admin') {
-            return res.status(403).json({ success: false, message: 'Cannot assign admin role via this endpoint' });
+        if (updates.role && updates.role.toLowerCase() === 'admin') {
+            if (user.role.toLowerCase() !== 'admin') {
+                const adminCount = await User.countDocuments({ role: 'admin' });
+                if (adminCount >= 2) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Maximum limit of 2 admins has been reached. Cannot promote another user to admin.'
+                    });
+                }
+            }
         }
 
         Object.assign(user, updates);
@@ -726,7 +755,12 @@ export const deleteUser = async (req, res) => {
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
         if (user.role === 'admin') {
-            return res.status(403).json({ success: false, message: 'Cannot delete admin users' });
+            if (user._id.toString() === req.user._id.toString()) {
+                return res.status(403).json({ success: false, message: 'Cannot delete your own admin account.' });
+            }
+            if (user.email === 'admin@hoteljanro.com') {
+                return res.status(403).json({ success: false, message: 'Cannot delete the primary system admin account.' });
+            }
         }
 
         await User.findByIdAndDelete(req.params.id);
