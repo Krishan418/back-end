@@ -136,7 +136,7 @@ export const updateMenuItem = asyncHandler(async (req, res) => {
   }
 
   const item = await MenuItem.findByIdAndUpdate(req.params.id, updateData, {
-    new: true,
+    returnDocument: 'after',
     runValidators: true
   });
 

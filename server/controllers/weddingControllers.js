@@ -479,7 +479,7 @@ export const createHall = async (req, res) => {
 export const updateHall = async (req, res) => {
     try {
         const { hallName, capacity, price, type, status, image, location } = req.body;
-        const hall = await WeddingHall.findByIdAndUpdate(req.params.id, { hallName, capacity, price, type, status, image, location }, { new: true, runValidators: true });
+        const hall = await WeddingHall.findByIdAndUpdate(req.params.id, { hallName, capacity, price, type, status, image, location }, { returnDocument: 'after', runValidators: true });
         if (!hall) return res.status(404).json({ success: false, message: 'Venue not found' });
         res.status(200).json({ success: true, message: 'Venue updated', data: hall });
     } catch (error) {
@@ -514,7 +514,7 @@ export const toggleHallStatus = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid status' });
         }
 
-        const hall = await WeddingHall.findByIdAndUpdate(req.params.id, { status }, { new: true, runValidators: true });
+        const hall = await WeddingHall.findByIdAndUpdate(req.params.id, { status }, { returnDocument: 'after', runValidators: true });
         if (!hall) return res.status(404).json({ success: false, message: 'Venue not found' });
 
         res.status(200).json({ success: true, message: `Status updated to ${status}`, data: hall });

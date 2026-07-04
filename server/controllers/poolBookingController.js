@@ -248,7 +248,7 @@ export const updatePoolBooking = async (req, res) => {
         const finalPrice = updateData.pricePerPerson ?? bookingToUpdate.pricePerPerson;
         updateData.totalAmount = Number((finalPrice * finalGuests).toFixed(2));
 
-        const updatedBooking = await PoolBooking.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
+        const updatedBooking = await PoolBooking.findByIdAndUpdate(id, updateData, { returnDocument: 'after', runValidators: true });
         
         return res.status(200).json({
             success: true,

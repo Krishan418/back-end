@@ -15,13 +15,13 @@ export const createOrder = asyncHandler(async (req, res) => {
   let subtotal = 0;
   const validatedItems = [];
 
-  // Validate each menu item
-  await Promise.all(items.map(async (item) => {
+  // Validate each menu item sequentially to prevent unhandled promise rejections
+  for (const item of items) {
     const realMenuItem = await MenuItem.findById(item.menuItemId);
 
     if (!realMenuItem) {
       res.status(404);
-      throw new Error(`Menu item not found (ID: ${item.menuItemId})`);
+      throw new Error(`Menu item not found (ID: ${item.menuItemId}). It may have been deleted.`);
     }
 
     let itemPrice = realMenuItem.price;
@@ -41,7 +41,7 @@ export const createOrder = asyncHandler(async (req, res) => {
       price: itemPrice,
       quantity: item.quantity,
     });
-  }));
+  }
 
   // Calculate final totals
   const finalSubtotal = req.body.subtotal || subtotal;
@@ -121,7 +121,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       let subtotal = 0;
       const validatedItems = [];
 
-      await Promise.all(req.body.items.map(async (item) => {
+      for (const item of req.body.items) {
         const realMenuItem = await MenuItem.findById(item.menuItemId);
         if (!realMenuItem) {
           res.status(404);
@@ -142,7 +142,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
           price: itemPrice,
           quantity: item.quantity,
         });
-      }));
+      }
 
       req.body.items = validatedItems;
       req.body.subtotal = subtotal;
@@ -205,7 +205,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   const updatedOrder = await Order.findByIdAndUpdate(
     req.params.id,
     updateData,
-    { new: true, runValidators: true }
+    { returnDocument: 'after', runValidators: true }
   );
 
   broadcastEvent("orderUpdated", updatedOrder);
