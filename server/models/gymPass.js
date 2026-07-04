@@ -20,6 +20,10 @@ const gymPassSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  guestEmail: {
+    type: String,
+    default: ''
+  },
   roomNumber: {
     type: String,
     default: ''

@@ -4,9 +4,6 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import sendEmail from '../utils/email.js';
 import Settings from '../models/Settings.js';
-import { OAuth2Client } from 'google-auth-library';
-
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 
 const getOTPTemplate = (otp, name, hotelName = 'Hotel Janro') => {
@@ -104,7 +101,7 @@ const getOTPTemplate = (otp, name, hotelName = 'Hotel Janro') => {
 };
 
 
-const getStaffWelcomeTemplate = (name, role, password, hotelName = 'Hotel Janro') => {
+const getStaffWelcomeTemplate = (name, email, role, password, hotelName = 'Hotel Janro') => {
     return `
     <!DOCTYPE html>
     <html>
@@ -174,11 +171,11 @@ const getStaffWelcomeTemplate = (name, role, password, hotelName = 'Hotel Janro'
                 
                 <div class="info-box">
                     <p style="margin-top: 0;"><strong>Your Account Credentials:</strong></p>
-                    <p><strong>Email:</strong> ${name}</p>
+                    <p><strong>Email Address:</strong> ${email}</p>
                     <p><strong>Temporary Password:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px;">${password}</code></p>
                 </div>
                 
-                <p>Please log in to the admin dashboard using your email and the temporary password provided above. For security reasons, we strongly recommend changing your password immediately after your first login.</p>
+                <p>Please log in using your email and the temporary password provided above. For security reasons, we strongly recommend changing your password immediately after your first login.</p>
                 
                 <p>We look forward to working with you and seeing your contributions to our success!</p>
             </div>
@@ -281,7 +278,8 @@ export const login = async (req, res) => {
             });
         }
 
-        const user = await User.findOne({ email }).select('+password');
+        const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+        const user = await User.findOne({ email: normalizedEmail }).select('+password');
         if (!user) {
             return res.status(401).json({ 
                 success: false,
@@ -340,6 +338,14 @@ export const login = async (req, res) => {
     }
 };
 
+// Google login is not wired up yet; keep the route import valid and return a clear response.
+export const googleLogin = async (req, res) => {
+    return res.status(501).json({
+        success: false,
+        message: 'Google login is not implemented yet.'
+    });
+};
+
 // Get logged-in user profile
 export const getMe = async (req, res) => {
     try {
@@ -394,6 +400,16 @@ export const updateUserRole = async (req, res) => {
                 success: false,
                 message: 'User not found'
             });
+        }
+
+        if (role.toLowerCase() === 'admin' && user.role.toLowerCase() !== 'admin') {
+            const adminCount = await User.countDocuments({ role: 'admin' });
+            if (adminCount >= 2) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Maximum limit of 2 admins has been reached. Cannot promote another user to admin.'
+                });
+            }
         }
 
         user.role = role;
@@ -527,7 +543,9 @@ export const createStaff = async (req, res) => {
     try {
         const { 
             name, email, phone, role, department, salary, joinDate, status,
-            nic, employeeId, address, emergencyContact, emergencyContactPhone 
+            nic, employeeId, address, emergencyContact, emergencyContactPhone,
+            employmentType, hourlyRate, startTime, endTime, additionalHours, bonus,
+            password
         } = req.body;
         const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
@@ -535,16 +553,64 @@ export const createStaff = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Name and email are required' });
         }
 
-        const allowedRoles = ['staff', 'manager', 'receptionist', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance', 'cashier'];
+        // Email Validation
+        const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+        if (!emailRegex.test(normalizedEmail)) {
+            return res.status(400).json({ success: false, message: 'Please provide a valid email address' });
+        }
+
+        // Phone Validation (Allow full phone number with international country codes)
+        const phoneRegex = /^\+?[0-9\s\-()]{9,20}$/;
+        if (phone && !phoneRegex.test(phone)) {
+            return res.status(400).json({ success: false, message: 'Please provide a valid phone number' });
+        }
+
+        // NIC Validation (9 digits + V/X or 12 digits)
+        if (!nic) {
+            return res.status(400).json({ success: false, message: 'NIC number is required' });
+        }
+        const nicRegex = /^(?:\d{9}[vVxX]|\d{12})$/;
+        if (!nicRegex.test(nic)) {
+            return res.status(400).json({ success: false, message: 'Invalid NIC format. Use 9 digits + V/X or 12 digits' });
+        }
+
+        const allowedRoles = ['staff', 'manager', 'receptionist', 'cashier', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance', 'admin'];
         const assignedRole = (role || 'staff').toLowerCase();
         if (!allowedRoles.includes(assignedRole)) {
             return res.status(400).json({ success: false, message: 'Invalid role for this endpoint' });
         }
 
+        if (assignedRole === 'admin') {
+            const adminCount = await User.countDocuments({ role: 'admin' });
+            if (adminCount >= 2) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Maximum limit of 2 admins has been reached. Cannot create another admin account.'
+                });
+            }
+        }
+
         const existing = await User.findOne({ email: normalizedEmail });
         if (existing) return res.status(400).json({ success: false, message: 'User already exists' });
 
-        const tempPassword = `Staff@${Math.random().toString(36).slice(2,8)}`;
+        if (joinDate && new Date(joinDate) > new Date()) {
+            return res.status(400).json({ success: false, message: 'Join date cannot be in the future' });
+        }
+
+        let finalEmployeeId = employeeId;
+        if (!finalEmployeeId) {
+            let count = await User.countDocuments({ role: { $in: ['staff', 'manager', 'receptionist', 'cashier', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance', 'admin'] } });
+            let generatedId = `STF-${String(count + 1).padStart(3, '0')}`;
+            let exists = await User.findOne({ employeeId: generatedId });
+            while (exists) {
+                count++;
+                generatedId = `STF-${String(count + 1).padStart(3, '0')}`;
+                exists = await User.findOne({ employeeId: generatedId });
+            }
+            finalEmployeeId = generatedId;
+        }
+
+        const tempPassword = password || `Staff@${Math.random().toString(36).slice(2,8)}`;
 
         const user = await User.create({
             name,
@@ -558,10 +624,16 @@ export const createStaff = async (req, res) => {
             joinDate,
             status: status || 'active',
             nic,
-            employeeId,
+            employeeId: finalEmployeeId,
             address,
             emergencyContact,
             emergencyContactPhone,
+            employmentType: employmentType || 'permanent',
+            hourlyRate: hourlyRate || 0,
+            startTime,
+            endTime,
+            additionalHours: additionalHours || 0,
+            bonus: bonus || 0,
             isVerified: true
         });
 
@@ -570,23 +642,40 @@ export const createStaff = async (req, res) => {
         const hotelName = settings.hotelName;
 
         // Send Welcome email with credentials
-        const message = `Congratulations ${name}! Welcome to the ${hotelName} team as a ${assignedRole}. Your temporary password is: ${tempPassword}`;
-        const html = getStaffWelcomeTemplate(name, assignedRole, tempPassword, hotelName);
+        const message = `Congratulations ${name}! Welcome to the ${hotelName} team as a ${assignedRole}. Your login email is: ${normalizedEmail} and temporary password is: ${tempPassword}`;
+        const html = getStaffWelcomeTemplate(name, normalizedEmail, assignedRole, tempPassword, hotelName);
         
-        try {
-            await sendEmail({
+        // Check if SMTP email credentials are configured
+        const emailHost = process.env.EMAIL_HOST || process.env.SMTP_HOST;
+        const emailPort = process.env.EMAIL_PORT || process.env.SMTP_PORT;
+        const emailUser = process.env.EMAIL_USER || process.env.SMTP_USER;
+        const emailPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+        const smtpReady = Boolean(
+            emailHost &&
+            emailPort &&
+            emailUser &&
+            emailPass &&
+            !['localhost', '127.0.0.1'].includes(String(emailHost))
+        );
+
+        let emailSent = false;
+        const canSendWelcomeEmail = settings.notifications?.staffUpdates !== false;
+        if (smtpReady && canSendWelcomeEmail) {
+            emailSent = true;
+            // Send email in the background asynchronously without awaiting it
+            sendEmail({
                 email: user.email,
                 subject: `Congratulations! Welcome to ${hotelName}`,
                 message,
-                html,
-                hotelName
+                html
+            }).catch(emailError => {
+                console.error('Failed to send welcome email:', emailError);
             });
-        } catch (error) {
-            console.error("Failed to send staff welcome email", error);
         }
 
         res.status(201).json({
             success: true,
+            emailSent,
             data: {
                 _id: user._id,
                 name: user.name,
@@ -601,7 +690,14 @@ export const createStaff = async (req, res) => {
                 employeeId: user.employeeId,
                 address: user.address,
                 emergencyContact: user.emergencyContact,
-                emergencyContactPhone: user.emergencyContactPhone
+                emergencyContactPhone: user.emergencyContactPhone,
+                employmentType: user.employmentType,
+                hourlyRate: user.hourlyRate,
+                startTime: user.startTime,
+                endTime: user.endTime,
+                additionalHours: user.additionalHours,
+                bonus: user.bonus,
+                tempPassword
             }
         });
     } catch (error) {
@@ -614,19 +710,60 @@ export const updateUser = async (req, res) => {
     try {
         const allowed = [
             'name', 'phone', 'role', 'department', 'salary', 'joinDate', 'status', 'email',
-            'nic', 'employeeId', 'address', 'emergencyContact', 'emergencyContactPhone'
+            'nic', 'employeeId', 'address', 'emergencyContact', 'emergencyContactPhone',
+            'employmentType', 'hourlyRate', 'startTime', 'endTime', 'additionalHours', 'bonus'
         ];
         const updates = {};
         for (const key of allowed) {
             if (req.body[key] !== undefined) updates[key] = req.body[key];
         }
 
+        // Email Validation if being updated
+        if (updates.email) {
+            const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+            if (!emailRegex.test(updates.email)) {
+                return res.status(400).json({ success: false, message: 'Please provide a valid email address' });
+            }
+        }
+
+        // Phone Validation if being updated
+        if (updates.phone) {
+            const phoneRegex = /^\+?[0-9\s\-()]{9,20}$/;
+            if (!phoneRegex.test(updates.phone)) {
+                return res.status(400).json({ success: false, message: 'Please provide a valid phone number' });
+            }
+        }
+
+        // NIC Validation if being updated
+        if (updates.nic !== undefined) {
+            if (!updates.nic) {
+                return res.status(400).json({ success: false, message: 'NIC number is required' });
+            }
+            const nicRegex = /^(?:\d{9}[vVxX]|\d{12})$/;
+            if (!nicRegex.test(updates.nic)) {
+                return res.status(400).json({ success: false, message: 'Invalid NIC format' });
+            }
+        }
+
+        // Join Date validation if being updated
+        if (updates.joinDate && new Date(updates.joinDate) > new Date()) {
+            return res.status(400).json({ success: false, message: 'Join date cannot be in the future' });
+        }
+
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
 
-        if (updates.role && updates.role === 'admin') {
-            return res.status(403).json({ success: false, message: 'Cannot assign admin role via this endpoint' });
+        if (updates.role && updates.role.toLowerCase() === 'admin') {
+            if (user.role.toLowerCase() !== 'admin') {
+                const adminCount = await User.countDocuments({ role: 'admin' });
+                if (adminCount >= 2) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Maximum limit of 2 admins has been reached. Cannot promote another user to admin.'
+                    });
+                }
+            }
         }
 
         Object.assign(user, updates);
@@ -646,7 +783,13 @@ export const updateUser = async (req, res) => {
             employeeId: user.employeeId,
             address: user.address,
             emergencyContact: user.emergencyContact,
-            emergencyContactPhone: user.emergencyContactPhone
+            emergencyContactPhone: user.emergencyContactPhone,
+            employmentType: user.employmentType,
+            hourlyRate: user.hourlyRate,
+            startTime: user.startTime,
+            endTime: user.endTime,
+            additionalHours: user.additionalHours,
+            bonus: user.bonus
         }});
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -660,7 +803,12 @@ export const deleteUser = async (req, res) => {
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
         if (user.role === 'admin') {
-            return res.status(403).json({ success: false, message: 'Cannot delete admin users' });
+            if (user._id.toString() === req.user._id.toString()) {
+                return res.status(403).json({ success: false, message: 'Cannot delete your own admin account.' });
+            }
+            if (user.email === 'admin@hoteljanro.com') {
+                return res.status(403).json({ success: false, message: 'Cannot delete the primary system admin account.' });
+            }
         }
 
         await User.findByIdAndDelete(req.params.id);
@@ -988,86 +1136,5 @@ export const verifyEmailChange = async (req, res) => {
     }
 };
 
-// Google Sign-In Login/Signup Controller
-export const googleLogin = async (req, res) => {
-    try {
-        const { credential } = req.body;
 
-        if (!credential) {
-            return res.status(400).json({ success: false, message: 'Google credential is required' });
-        }
-
-        // Verify the ID Token from Google
-        const ticket = await client.verifyIdToken({
-            idToken: credential,
-            audience: process.env.GOOGLE_CLIENT_ID
-        });
-
-        const payload = ticket.getPayload();
-        const { sub: googleId, email, name } = payload;
-
-        if (!email) {
-            return res.status(400).json({ success: false, message: 'Email not provided by Google profile' });
-        }
-
-        // 1. Check if user already exists with googleId
-        let user = await User.findOne({ googleId });
-
-        if (!user) {
-            // 2. If not found, check if a user already exists with this email address
-            user = await User.findOne({ email });
-
-            if (user) {
-                // Link Google account to this existing account
-                user.googleId = googleId;
-                if (!user.isVerified) user.isVerified = true;
-                await user.save({ validateBeforeSave: false });
-            } else {
-                // 3. User does not exist, create a new customer account
-                // Generate a high-entropy random password to satisfy model constraints safely
-                const randomPassword = crypto.randomBytes(16).toString('hex');
-                
-                user = await User.create({
-                    name,
-                    email,
-                    password: randomPassword,
-                    confirmPassword: randomPassword,
-                    googleId,
-                    isVerified: true,
-                    role: 'customer',
-                    status: 'active'
-                });
-            }
-        }
-
-        // Check if account is active
-        if (user.status && user.status.toLowerCase() !== 'active') {
-            return res.status(403).json({
-                success: false,
-                message: 'Your account has been deactivated. Please contact support.'
-            });
-        }
-
-        // Generate Access and Refresh JWT Tokens
-        const accessToken = generateAccessToken(user._id, user.role);
-        const refreshToken = generateRefreshToken(user._id, user.role);
-
-        res.status(200).json({
-            success: true,
-            message: 'Logged in with Google successfully!',
-            data: {
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                phone: user.phone || '',
-                role: user.role,
-                token: accessToken,
-                refreshToken
-            }
-        });
-    } catch (error) {
-        console.error('Google Auth Error:', error);
-        res.status(400).json({ success: false, message: 'Google authentication failed: ' + error.message });
-    }
-};
 
