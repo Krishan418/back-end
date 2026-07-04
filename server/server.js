@@ -25,6 +25,7 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 import { createServer } from "http";
 import { initSocket } from "./utils/socket.js";
 import gymRoutes from "./routes/gymRoutes.js";
+import errorHandler from "./middleware/errorHandler.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -89,13 +90,7 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/gym", gymRoutes);
 
 // Global error handler
-app.use((err, req, res, next) => {
-    console.error('SERVER ERROR:', err.stack);
-    res.status(500).json({
-        success: false,
-        message: err.message || 'Internal Server Error'
-    });
-});
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 

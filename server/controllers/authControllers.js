@@ -532,7 +532,7 @@ export const createStaff = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Name and email are required' });
         }
 
-        const allowedRoles = ['staff', 'manager', 'receptionist', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance'];
+        const allowedRoles = ['staff', 'manager', 'receptionist', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance', 'cashier'];
         const assignedRole = (role || 'staff').toLowerCase();
         if (!allowedRoles.includes(assignedRole)) {
             return res.status(400).json({ success: false, message: 'Invalid role for this endpoint' });
