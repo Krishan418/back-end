@@ -7,6 +7,10 @@ const bookingSchema = new mongoose.Schema(
 			ref: 'Room',
 			required: [true, 'Room is required']
 		},
+		roomNumber: {
+			type: String,
+			required: [true, 'Room number is required']
+		},
 		user: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: 'User',

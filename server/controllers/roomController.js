@@ -1,4 +1,79 @@
 import Room from '../models/room.js';
+import Booking from '../models/booking.js';
+
+export const getAvailableRoomNumbers = async (req, res) => {
+	try {
+		const { id } = req.params;
+		const { checkInDate, checkOutDate, checkInType, checkOutType, stayMode, variant } = req.query;
+
+		if (!checkInDate || !checkOutDate) {
+			return res.status(400).json({ success: false, message: 'Missing dates' });
+		}
+
+		const room = await Room.findById(id);
+		if (!room) {
+			return res.status(404).json({ success: false, message: 'Room not found' });
+		}
+
+		const startMs = new Date(checkInDate).getTime();
+		const startIndex = (Math.floor(startMs / (1000 * 60 * 60 * 24)) * 2) + (checkInType === 'Night' ? 1 : 0);
+
+		let endIndex;
+		if (stayMode === 'onlyDay' || stayMode === 'onlyNight') {
+			endIndex = startIndex;
+		} else {
+			const endMs = new Date(checkOutDate).getTime();
+			endIndex = (Math.floor(endMs / (1000 * 60 * 60 * 24)) * 2) + (checkOutType === 'Night' ? 1 : 0);
+		}
+
+		const overlappingBookings = await Booking.find({
+			room: room._id,
+			status: { $ne: 'cancelled' },
+			startIndex: { $lte: endIndex },
+			endIndex: { $gte: startIndex }
+		});
+
+		const bookedRoomNumbers = overlappingBookings.map(b => b.roomNumber);
+
+		const ROOM_START_NUMBERS = {
+			'ac standard room': 1,
+			'non-ac standard room': 4,
+			'standard room': 1,
+			'family room': 7,
+			'family suite': 7,
+			'wedding couple suite': 9,
+			'honeymoon suite': 9,
+		};
+		const lower = (room.name || '').toLowerCase();
+		const key = Object.keys(ROOM_START_NUMBERS).find(k => lower.includes(k) || k.includes(lower));
+		const startNumber = key ? ROOM_START_NUMBERS[key] : 1;
+
+		let allRoomNumbers = [];
+		for (let i = 0; i < room.totalRooms; i++) {
+			allRoomNumbers.push(`Room ${startNumber + i}`);
+		}
+
+		if (lower.includes('standard room') && variant) {
+			if (variant === 'ac') {
+				allRoomNumbers = allRoomNumbers.filter(num => ['Room 5', 'Room 6'].includes(num));
+			} else if (variant === 'nonAc') {
+				allRoomNumbers = allRoomNumbers.filter(num => ['Room 1', 'Room 2', 'Room 3', 'Room 4'].includes(num));
+			}
+		}
+
+		const availableRoomNumbers = allRoomNumbers.filter(num => !bookedRoomNumbers.includes(num));
+
+		res.status(200).json({
+			success: true,
+			data: availableRoomNumbers
+		});
+	} catch (error) {
+		res.status(500).json({
+			success: false,
+			message: error.message
+		});
+	}
+};
 
 export const getAdminRooms = async (req, res) => {
 	try {
@@ -117,10 +192,50 @@ export const getRooms = async (req, res) => {
 
 		const rooms = await Room.find(filters).sort({ createdAt: -1 });
 
+		// Dynamically calculate today's available rooms for each room
+		const todayStr = new Date().toISOString().split('T')[0];
+		const startMs = new Date(todayStr).getTime();
+		const startIndex = (Math.floor(startMs / (1000 * 60 * 60 * 24)) * 2); // default to Day slot today
+		
+		const activeBookings = await Booking.find({
+			status: { $ne: 'cancelled' },
+			startIndex: { $lte: startIndex },
+			endIndex: { $gte: startIndex }
+		});
+
+		const ROOM_START_NUMBERS = {
+			'ac standard room': 5,
+			'non-ac standard room': 1,
+			'standard room': 1,
+			'family room': 7,
+			'family suite': 7,
+			'wedding couple suite': 9,
+			'honeymoon suite': 9,
+		};
+
+		const formattedRooms = rooms.map(room => {
+			const lower = (room.name || '').toLowerCase();
+			const key = Object.keys(ROOM_START_NUMBERS).find(k => lower.includes(k) || k.includes(lower));
+			const startNumber = key ? ROOM_START_NUMBERS[key] : 1;
+
+			const allRoomNumbers = [];
+			for (let i = 0; i < room.totalRooms; i++) {
+				allRoomNumbers.push(`Room ${startNumber + i}`);
+			}
+
+			const overlappingBookings = activeBookings.filter(b => b.room.toString() === room._id.toString());
+			const bookedRoomNumbers = overlappingBookings.map(b => b.roomNumber).filter(Boolean);
+			const availableCount = allRoomNumbers.filter(num => !bookedRoomNumbers.includes(num)).length;
+
+			const roomObj = room.toObject();
+			roomObj.availableRooms = availableCount;
+			return roomObj;
+		});
+
 		res.status(200).json({
 			success: true,
-			count: rooms.length,
-			data: rooms
+			count: formattedRooms.length,
+			data: formattedRooms
 		});
 	} catch (error) {
 		res.status(500).json({
