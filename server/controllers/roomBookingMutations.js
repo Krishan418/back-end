@@ -2,6 +2,7 @@ import Booking from '../models/booking.js';
 import Room from '../models/room.js';
 import sendEmail from '../utils/email.js';
 import Settings from '../models/Settings.js';
+import Payment from '../models/payment.js';
 import {
 	CANCELLABLE_BY_USER,
 	isValidStatusTransition,
@@ -106,7 +107,8 @@ export const createBooking = async (req, res) => {
 			checkInType,
 			checkOutType,
 			stayMode,
-			roomNumber
+			roomNumber,
+			paymentMethod
 		} = req.body;
 
 		//Required Fields Validation
@@ -225,7 +227,8 @@ export const createBooking = async (req, res) => {
 			checkOutType: checkOutType || 'Night',
 			startIndex,
 			endIndex,
-			roomNumber
+			roomNumber,
+			paymentMethod: paymentMethod || 'Cash'
 		});
 
 		const populatedBooking = await Booking.findById(booking._id).populate('room', 'name price image');
@@ -503,12 +506,20 @@ export const updateBookingDetails = async (req, res) => {
 			phone,
 			guests,
 			specialRequests,
-			decorationItems
+			decorationItems,
+			paymentStatus,
+			paymentMethod,
+			status
 		} = req.body;
+
+		const wasPaid = booking.paymentStatus === 'Paid';
 
 		if (fullName) booking.fullName = fullName;
 		if (phone) booking.phone = phone;
 		if (specialRequests !== undefined) booking.specialRequests = specialRequests;
+		if (paymentStatus) booking.paymentStatus = paymentStatus;
+		if (paymentMethod) booking.paymentMethod = paymentMethod;
+		if (status) booking.status = status;
 
 		// Handle guests change
 		if (guests) {
@@ -529,6 +540,22 @@ export const updateBookingDetails = async (req, res) => {
 			const basePrice = getRoomOptionPrice(room.name, isAc, calculatedStayMode);
 			booking.totalPrice = (basePrice * slots) + decorationTotal;
 			booking.decorationItems = sanitizedDecorationItems;
+		}
+
+		// Create Payment record if newly paid
+		if (paymentStatus === 'Paid' && !wasPaid) {
+			try {
+				await Payment.create({
+					amount: booking.totalPrice || 0,
+					method: paymentMethod || 'Online',
+					status: 'Completed',
+					user: booking.user || "000000000000000000000000",
+					referenceId: booking._id,
+					onModel: 'Booking'
+				});
+			} catch (err) {
+				console.error("Failed to create Payment log during local update:", err);
+			}
 		}
 
 		await booking.save();
