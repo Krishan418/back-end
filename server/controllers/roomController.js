@@ -49,7 +49,9 @@ export const getAvailableRoomNumbers = async (req, res) => {
 		const startNumber = key ? ROOM_START_NUMBERS[key] : 1;
 
 		let allRoomNumbers = [];
-		for (let i = 0; i < room.totalRooms; i++) {
+		const fallbackTotal = lower.includes('standard room') ? 6 : 2;
+		const totalRoomsCount = room.totalRooms || fallbackTotal;
+		for (let i = 0; i < totalRoomsCount; i++) {
 			allRoomNumbers.push(`Room ${startNumber + i}`);
 		}
 

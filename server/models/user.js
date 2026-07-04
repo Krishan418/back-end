@@ -49,7 +49,6 @@ const userSchema = new mongoose.Schema({
     },
     nic: {
         type: String,
-        required: [true, 'NIC is required'],
         unique: true,
         sparse: true,
         trim: true
@@ -122,6 +121,14 @@ const userSchema = new mongoose.Schema({
     pendingEmail: String,
     resetPasswordToken: String,
     resetPasswordExpire: Date,
+    twoFactorEnabled: {
+        type: Boolean,
+        default: false
+    },
+    twoFactorSecret: {
+        type: String,
+        select: false
+    },
     createdAt: {
         type: Date,
         default: Date.now

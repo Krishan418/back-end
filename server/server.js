@@ -24,6 +24,8 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 import { createServer } from "http";
 import { initSocket } from "./utils/socket.js";
 import gymRoutes from "./routes/gymRoutes.js";
+import payhereRoutes from "./routes/payhereRoutes.js";
+import contactRoutes from "./routes/contactRoutes.js";
 import errorHandler from "./middleware/errorHandler.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -89,6 +91,8 @@ app.use("/api/settings", settingsRoutes);
 app.use("/api/reports", adminReportRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/gym", gymRoutes);
+app.use("/api/payments", payhereRoutes);
+app.use("/api/contact", contactRoutes);
 
 // Global error handler
 app.use(errorHandler);

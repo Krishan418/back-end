@@ -62,6 +62,16 @@ const poolBookingSchema = new mongoose.Schema(
             type: Number,
             required: true,
             min: [0, 'Total amount cannot be negative']
+        },
+        paymentStatus: {
+            type: String,
+            enum: ['Unpaid', 'Paid'],
+            default: 'Unpaid'
+        },
+        paymentMethod: {
+            type: String,
+            enum: ['Cash', 'Card', 'Online'],
+            default: 'Cash'
         }
     },
     {

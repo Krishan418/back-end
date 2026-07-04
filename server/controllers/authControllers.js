@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import sendEmail from '../utils/email.js';
 import Settings from '../models/Settings.js';
+import { generateSecret, verifyTOTP } from '../utils/totp.js';
 
 
 const getOTPTemplate = (otp, name, hotelName = 'Hotel Janro') => {
@@ -310,6 +311,15 @@ export const login = async (req, res) => {
             return res.status(401).json({ 
                 success: false,
                 message: 'Invalid email or password' 
+            });
+        }
+
+        // Check if two-factor is active
+        if (user.twoFactorEnabled) {
+            return res.status(200).json({
+                success: true,
+                twoFactorRequired: true,
+                userId: user._id
             });
         }
 
@@ -832,6 +842,10 @@ export const changePassword = async (req, res) => {
             return res.status(400).json({ success: false, message: 'New passwords do not match' });
         }
 
+        if (currentPassword === newPassword) {
+            return res.status(400).json({ success: false, message: 'New password cannot be the same as the current password' });
+        }
+
         const user = await User.findById(req.user._id).select('+password');
 
         const isMatch = await user.comparePassword(currentPassword);
@@ -982,159 +996,110 @@ export const verifyEmail = async (req, res) => {
     }
 };
 
-// Resend Verification OTP
-export const resendOTP = async (req, res) => {
+// Setup 2FA
+export const setup2FA = async (req, res) => {
     try {
-        const { email } = req.body;
-
-        if (!email) {
-            return res.status(400).json({ success: false, message: 'Please provide email' });
-        }
-
-        const user = await User.findOne({ email });
-
+        const user = await User.findById(req.user._id);
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found' });
         }
 
-        if (user.isVerified) {
-            return res.status(400).json({ success: false, message: 'User is already verified' });
+        const secret = generateSecret();
+        const email = user.email;
+        const otpauthUrl = `otpauth://totp/HotelJanro:${encodeURIComponent(email)}?secret=${secret}&issuer=HotelJanro`;
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpauthUrl)}`;
+
+        res.status(200).json({
+            success: true,
+            secret,
+            qrCodeUrl
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Verify & Enable 2FA
+export const verify2FA = async (req, res) => {
+    try {
+        const { secret, code } = req.body;
+        
+        if (!secret || !code) {
+            return res.status(400).json({ success: false, message: 'Secret and verification code are required' });
         }
 
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
-        
-        user.verificationOTP = hashedOTP;
-        user.verificationOTPExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+        const isValid = verifyTOTP(secret, code);
+        if (!isValid) {
+            return res.status(400).json({ success: false, message: 'Invalid verification code' });
+        }
+
+        const user = await User.findById(req.user._id).select('+twoFactorSecret');
+        user.twoFactorSecret = secret;
+        user.twoFactorEnabled = true;
         await user.save({ validateBeforeSave: false });
 
-        // Fetch settings for hotel name
-        const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
-        const hotelName = settings.hotelName;
+        res.status(200).json({
+            success: true,
+            message: 'Two-Factor Authentication enabled successfully!'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
 
-        // Send OTP via email
-        const message = `Welcome to ${hotelName}!\n\nYour new email verification code is: ${otp}\n\nThis code will expire in 10 minutes.`;
-        const html = getOTPTemplate(otp, user.name, hotelName);
-        
-        try {
-            await sendEmail({
+// Disable 2FA
+export const disable2FA = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        user.twoFactorSecret = undefined;
+        user.twoFactorEnabled = false;
+        await user.save({ validateBeforeSave: false });
+
+        res.status(200).json({
+            success: true,
+            message: 'Two-Factor Authentication disabled successfully.'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Verify Login 2FA
+export const verifyLogin2FA = async (req, res) => {
+    try {
+        const { userId, code } = req.body;
+
+        if (!userId || !code) {
+            return res.status(400).json({ success: false, message: 'User ID and verification code are required' });
+        }
+
+        const user = await User.findById(userId).select('+twoFactorSecret');
+        if (!user || !user.twoFactorEnabled) {
+            return res.status(400).json({ success: false, message: 'Invalid request or 2FA not active' });
+        }
+
+        const isValid = verifyTOTP(user.twoFactorSecret, code);
+        if (!isValid) {
+            return res.status(400).json({ success: false, message: 'Invalid verification code' });
+        }
+
+        const accessToken = generateAccessToken(user._id, user.role);
+        const refreshToken = generateRefreshToken(user._id, user.role);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                _id: user._id,
+                name: user.name,
                 email: user.email,
-                subject: `${hotelName} - Verify Your Email`,
-                message,
-                html,
-                hotelName
-            });
-
-            res.status(200).json({ success: true, message: 'A new verification code has been sent to your email.' });
-        } catch (error) {
-            console.error("Failed to send resend OTP email", error);
-            res.status(500).json({ success: false, message: 'Failed to send verification email. Please try again.' });
-        }
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-// Request Email Change
-export const requestEmailChange = async (req, res) => {
-    try {
-        const { newEmail } = req.body;
-        const userId = req.user.id;
-
-        if (!newEmail) {
-            return res.status(400).json({ success: false, message: 'Please provide the new email address' });
-        }
-
-        const existingUser = await User.findOne({ email: newEmail });
-        if (existingUser) {
-            return res.status(400).json({ success: false, message: 'This email is already in use' });
-        }
-
-        const user = await User.findById(userId);
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'User not found' });
-        }
-
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
-
-        user.pendingEmail = newEmail;
-        user.verificationOTP = hashedOTP;
-        user.verificationOTPExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
-        await user.save({ validateBeforeSave: false });
-
-
-        const html = `
-            <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                <h2 style="color: #0F172A;">Confirm Your New Email Address</h2>
-                <p>Hello ${user.name},</p>
-                <p>You requested to change your email address to <strong>${newEmail}</strong>. Please use the verification code below to confirm this change:</p>
-                <div style="background: #F8FAFC; padding: 20px; text-align: center; border: 2px dashed #D4AF37; margin: 20px 0;">
-                    <h1 style="letter-spacing: 10px; color: #0F172A; margin: 0;">${otp}</h1>
-                </div>
-                <p>If you did not request this change, please ignore this email.</p>
-                <p style="color: #94A3B8; font-size: 12px;">This code will expire in 10 minutes.</p>
-            </div>
-        `;
-
-        try {
-            await sendEmail({
-                email: newEmail,
-                subject: 'Hotel Janro - Confirm Email Change',
-                message: `Your verification code for email change is: ${otp}`,
-                html
-            });
-
-            res.status(200).json({ success: true, message: 'Verification code sent to your new email address' });
-        } catch (error) {
-            console.error("Email change OTP error:", error);
-            res.status(500).json({ success: false, message: 'Failed to send verification email' });
-        }
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-// Verify Email Change
-export const verifyEmailChange = async (req, res) => {
-    try {
-        const { otp } = req.body;
-        const userId = req.user.id;
-
-        if (!otp) {
-            return res.status(400).json({ success: false, message: 'Please provide the verification code' });
-        }
-
-        const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
-
-        const user = await User.findOne({
-            _id: userId,
-            verificationOTP: hashedOTP,
-            verificationOTPExpire: { $gt: Date.now() }
-        });
-
-        if (!user || !user.pendingEmail) {
-            return res.status(400).json({ success: false, message: 'Invalid or expired verification code' });
-        }
-
-
-        user.email = user.pendingEmail;
-        user.pendingEmail = undefined;
-        user.verificationOTP = undefined;
-        user.verificationOTPExpire = undefined;
-        user.isVerified = true;
-
-        await user.save({ validateBeforeSave: false });
-
-        res.status(200).json({ 
-            success: true, 
-            message: 'Email address updated successfully! Please log in again with your new email.',
-            data: { email: user.email }
+                phone: user.phone,
+                role: user.role,
+                token: accessToken,
+                refreshToken
+            }
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 };
-
-
 

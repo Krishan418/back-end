@@ -172,6 +172,18 @@ export const createGymPass = async (req, res) => {
 
 export const listGymPasses = async (req, res) => {
   try {
+    const today = new Date();
+    // Automatically flag expired active passes
+    await GymPass.updateMany(
+      { status: 'Active', validDate: { $lt: today } },
+      { $set: { status: 'Expired' } }
+    );
+    // Restore active status if validity date has been extended/restored in the future
+    await GymPass.updateMany(
+      { status: 'Expired', validDate: { $gte: today } },
+      { $set: { status: 'Active' } }
+    );
+
     const passes = await GymPass.find().sort({ createdAt: -1 });
     return res.status(200).json({
       success: true,
@@ -450,10 +462,22 @@ export const updateGymPass = async (req, res) => {
     if (paymentStatus) pass.paymentStatus = paymentStatus;
     if (status) pass.status = status;
     
-    if (validDays) {
-      const validDate = new Date();
-      validDate.setDate(validDate.getDate() + Number(validDays));
-      pass.validDate = validDate;
+    if (validDays && Number(validDays) > 0) {
+      // Calculate from existing validity date if active, else start from now
+      const baseDate = new Date(pass.validDate) > new Date() ? new Date(pass.validDate) : new Date();
+      const newValidDate = new Date(baseDate);
+      newValidDate.setDate(newValidDate.getDate() + Number(validDays));
+      newValidDate.setHours(23, 59, 59, 999);
+      pass.validDate = newValidDate;
+    }
+
+    // Auto synchronize status with validDate
+    if (pass.status !== 'Cancelled') {
+      if (new Date(pass.validDate) < new Date()) {
+        pass.status = 'Expired';
+      } else {
+        pass.status = 'Active';
+      }
     }
 
     await pass.save();
