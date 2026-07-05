@@ -19,7 +19,15 @@ export const updateSettings = async (req, res) => {
   try {
     const { hotelName, email, address, phone, website, currency, language, timezone, dateFormat, notifications, bankAccounts } = req.body;
     
+    if (email !== undefined && email !== "") {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({ success: false, message: 'Invalid email address format' });
+      }
+    }
+
     let settings = await Settings.findOne();
+
     
     if (!settings) {
       settings = await Settings.create({ hotelName, email, address, phone, website, currency, language, timezone, dateFormat, notifications, bankAccounts });
