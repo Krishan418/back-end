@@ -2,6 +2,7 @@ import Booking from '../models/booking.js';
 import Room from '../models/room.js';
 import sendEmail from '../utils/email.js';
 import Settings from '../models/Settings.js';
+import Payment from '../models/payment.js';
 import {
 	CANCELLABLE_BY_USER,
 	isValidStatusTransition,
@@ -105,14 +106,16 @@ export const createBooking = async (req, res) => {
 			decorationItems,
 			checkInType,
 			checkOutType,
-			stayMode
+			stayMode,
+			roomNumber,
+			paymentMethod
 		} = req.body;
 
 		//Required Fields Validation
-		if (!roomId || !checkInDate || !checkOutDate || !guests || !fullName || !email) {
+		if (!roomId || !checkInDate || !checkOutDate || !guests || !fullName || !email || !roomNumber) {
 			return res.status(400).json({
 				success: false,
-				message: 'Missing required booking fields'
+				message: 'Missing required booking fields (including roomNumber)'
 			});
 		}
 
@@ -196,7 +199,7 @@ export const createBooking = async (req, res) => {
 		}
 
 		// Decorations are allowed only for honeymoon room types.
-		const supportsDecorations = String(room.name || '').toLowerCase().includes('honeymoon');
+		const supportsDecorations = String(room.name || '').toLowerCase().includes('honeymoon') || String(room.name || '').toLowerCase().includes('wedding');
 		const sanitizedDecorationItems = supportsDecorations ? sanitizeDecorationItems(decorationItems) : [];
 		const decorationTotal = calculateDecorationTotal(sanitizedDecorationItems);
 
@@ -223,7 +226,9 @@ export const createBooking = async (req, res) => {
 			checkInType: checkInType || 'Day',
 			checkOutType: checkOutType || 'Night',
 			startIndex,
-			endIndex
+			endIndex,
+			roomNumber,
+			paymentMethod: paymentMethod || 'Cash'
 		});
 
 		const populatedBooking = await Booking.findById(booking._id).populate('room', 'name price image');
@@ -303,16 +308,26 @@ export const updateBookingStatus = async (req, res) => {
 		try {
 			let subject, message, htmlContent;
 			if (status === 'confirmed') {
+				const bookingIdStr = updatedBooking._id ? String(updatedBooking._id).slice(-8).toUpperCase() : 'N/A';
+				const checkInStr = new Date(updatedBooking.checkInDate).toLocaleDateString();
+				const checkOutStr = new Date(updatedBooking.checkOutDate).toLocaleDateString();
+				
 				subject = 'Booking Confirmed - Hotel Janro';
-				message = `Dear ${updatedBooking.fullName},\n\nYour booking has been officially confirmed!\n\nRoom: ${updatedBooking.room?.name}\nTotal Price: Rs. ${updatedBooking.totalPrice.toLocaleString()}\nWe look forward to hosting you.\n\nThank you, Hotel Janro`;
+				message = `Booking Confirmed!\n\nDear ${updatedBooking.fullName},\n\nYour booking has been successfully confirmed.\n\nBooking ID: BK${bookingIdStr}\nRoom: ${updatedBooking.room?.name}\nCheck-in: ${checkInStr}\nCheck-out: ${checkOutStr}\nGuests: ${updatedBooking.guests}\nTotal Price: Rs. ${updatedBooking.totalPrice.toLocaleString()}\nPayment Status: Pending (Pay at Reception)\n\nWe look forward to hosting you.\n\nThank you,\nHotel Janro`;
+				
 				htmlContent = `
 					<h2>Booking Confirmed!</h2>
 					<p>Dear ${updatedBooking.fullName},</p>
-					<p>Your booking has been officially <strong>confirmed</strong>!</p>
-					<ul>
-						<li><strong>Room:</strong> ${updatedBooking.room?.name}</li>
-						<li><strong>Total Price:</strong> Rs. ${updatedBooking.totalPrice.toLocaleString()}</li>
-					</ul>
+					<p>Your booking has been successfully confirmed.</p>
+					<p>
+						<strong>Booking ID:</strong> BK${bookingIdStr}<br/>
+						<strong>Room:</strong> ${updatedBooking.room?.name}<br/>
+						<strong>Check-in:</strong> ${checkInStr}<br/>
+						<strong>Check-out:</strong> ${checkOutStr}<br/>
+						<strong>Guests:</strong> ${updatedBooking.guests}<br/>
+						<strong>Total Price:</strong> Rs. ${updatedBooking.totalPrice.toLocaleString()}<br/>
+						<strong>Payment Status:</strong> Pending (Pay at Reception)
+					</p>
 					<p>We look forward to hosting you.</p>
 					<p>Thank you,<br/>Hotel Janro</p>
 				`;
@@ -367,7 +382,11 @@ export const cancelMyBooking = async (req, res) => {
 			});
 		}
 
-		if (!booking.user || booking.user.toString() !== req.user._id.toString()) {
+		const isAdminOrReception = req.user.role === 'admin' || req.user.role === 'reception';
+		const isOwner = (booking.user && booking.user.toString() === req.user._id.toString()) || 
+						(booking.email && req.user.email && booking.email.toLowerCase() === req.user.email.toLowerCase());
+
+		if (!isAdminOrReception && !isOwner) {
 			return res.status(403).json({
 				success: false,
 				message: 'Not authorized to cancel this booking'
@@ -491,12 +510,20 @@ export const updateBookingDetails = async (req, res) => {
 			phone,
 			guests,
 			specialRequests,
-			decorationItems
+			decorationItems,
+			paymentStatus,
+			paymentMethod,
+			status
 		} = req.body;
+
+		const wasPaid = booking.paymentStatus === 'Paid';
 
 		if (fullName) booking.fullName = fullName;
 		if (phone) booking.phone = phone;
 		if (specialRequests !== undefined) booking.specialRequests = specialRequests;
+		if (paymentStatus) booking.paymentStatus = paymentStatus;
+		if (paymentMethod) booking.paymentMethod = paymentMethod;
+		if (status) booking.status = status;
 
 		// Handle guests change
 		if (guests) {
@@ -506,7 +533,7 @@ export const updateBookingDetails = async (req, res) => {
 		// Handle decorations update (only for honeymoon suite)
 		const room = await Room.findById(booking.room);
 		if (room && decorationItems) {
-			const supportsDecorations = String(room.name || '').toLowerCase().includes('honeymoon');
+			const supportsDecorations = String(room.name || '').toLowerCase().includes('honeymoon') || String(room.name || '').toLowerCase().includes('wedding');
 			const sanitizedDecorationItems = supportsDecorations ? sanitizeDecorationItems(decorationItems) : [];
 			const decorationTotal = calculateDecorationTotal(sanitizedDecorationItems);
 			
@@ -517,6 +544,22 @@ export const updateBookingDetails = async (req, res) => {
 			const basePrice = getRoomOptionPrice(room.name, isAc, calculatedStayMode);
 			booking.totalPrice = (basePrice * slots) + decorationTotal;
 			booking.decorationItems = sanitizedDecorationItems;
+		}
+
+		// Create Payment record if newly paid
+		if (paymentStatus === 'Paid' && !wasPaid) {
+			try {
+				await Payment.create({
+					amount: booking.totalPrice || 0,
+					method: paymentMethod || 'Online',
+					status: 'Completed',
+					user: booking.user || "000000000000000000000000",
+					referenceId: booking._id,
+					onModel: 'Booking'
+				});
+			} catch (err) {
+				console.error("Failed to create Payment log during local update:", err);
+			}
 		}
 
 		await booking.save();

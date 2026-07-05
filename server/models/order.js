@@ -42,9 +42,17 @@ const orderSchema = new mongoose.Schema(
     },
     paymentStatus: {
       type: String,
-      enum: ["Unpaid", "Paid"],
+      enum: ["Unpaid", "Partial", "Paid"],
       default: "Unpaid",
     },
+    splitPayments: [
+      {
+        amount: { type: Number, required: true },
+        method: { type: String, required: true },
+        date: { type: Date, default: Date.now },
+        note: { type: String }
+      }
+    ],
     amountReceived: { type: Number, default: 0 },
     balance: { type: Number, default: 0 },
   },

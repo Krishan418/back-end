@@ -1,5 +1,7 @@
 import WeddingHall from '../models/weddingHall.js';
 import WeddingBooking from '../models/weddingBooking.js';
+import sendEmail from '../utils/email.js';
+import Payment from '../models/payment.js';
 
 // Create a new booking
 export const createBooking = async (req, res) => {
@@ -30,6 +32,14 @@ export const createBooking = async (req, res) => {
         const requestedDate = new Date(eventDate);
         if (Number.isNaN(requestedDate.getTime())) {
             return res.status(400).json({ success: false, message: 'Invalid eventDate format. Use YYYY-MM-DD' });
+        }
+
+        // Reject past dates
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        requestedDate.setHours(0, 0, 0, 0);
+        if (requestedDate < today) {
+            return res.status(400).json({ success: false, message: 'Event date cannot be in the past. Please choose a future date.' });
         }
 
         if (Number(guestCount) < 1) {
@@ -73,17 +83,35 @@ export const createBooking = async (req, res) => {
 
         // Catering cost based on category
         if (bookingCategory === 'Wedding') {
-            const packagePrices = { 'Silver': 2500, 'Gold': 4000, 'Platinum': 6500 };
-            if (packagePrices[cateringPackage]) {
-                totalAmount += packagePrices[cateringPackage] * Number(guestCount);
+            const weddingPackagePrices = {
+                '100 Pax Package': 4750,
+                '150 Pax Package': 4450,
+                '200 Pax Package': 3850,
+                '250 Pax Package': 3750
+            };
+            if (weddingPackagePrices[cateringPackage]) {
+                totalAmount += weddingPackagePrices[cateringPackage] * Number(guestCount);
             } else if (cateringPackage === 'Custom') {
                 totalAmount += Number(customPackagePrice) * Number(guestCount);
             }
         } else {
-            const mealPrices = { 'Breakfast': 800, 'Lunch': 1500, 'Tea Time': 600, 'Dinner': 1800 };
-            selectedMeals.forEach(meal => {
-                if (mealPrices[meal]) totalAmount += mealPrices[meal] * Number(guestCount);
-            });
+            // Events can use the event catering packages OR individual meals
+            const eventPackagePrices = {
+                'Lunch With Pool': 2415,
+                'Menu I': 2900,
+                'Menu II': 2750
+            };
+            if (cateringPackage && eventPackagePrices[cateringPackage]) {
+                totalAmount += eventPackagePrices[cateringPackage] * Number(guestCount);
+            } else if (cateringPackage === 'Custom') {
+                totalAmount += Number(customPackagePrice) * Number(guestCount);
+            } else {
+                // Fallback to individual meals
+                const mealPrices = { 'Breakfast': 800, 'Lunch': 1500, 'Tea Time': 600, 'Dinner': 1800 };
+                selectedMeals.forEach(meal => {
+                    if (mealPrices[meal]) totalAmount += mealPrices[meal] * Number(guestCount);
+                });
+            }
         }
 
         // Optional services
@@ -176,18 +204,34 @@ export const updateBooking = async (req, res) => {
         const hall = await WeddingHall.findById(hallId);
         if (hall) totalAmount += hall.price;
 
-        const packagePrices = { Silver: 2500, Gold: 4000, Platinum: 6500 };
         if (bookingCategory === 'Wedding') {
-            if (packagePrices[cateringPackage]) {
-                totalAmount += (packagePrices[cateringPackage] * guestCount);
+            const weddingPackagePrices = {
+                '100 Pax Package': 4750,
+                '150 Pax Package': 4450,
+                '200 Pax Package': 3850,
+                '250 Pax Package': 3750
+            };
+            if (weddingPackagePrices[cateringPackage]) {
+                totalAmount += (weddingPackagePrices[cateringPackage] * guestCount);
             } else if (cateringPackage === 'Custom') {
                 totalAmount += (Number(customPackagePrice) * guestCount);
             }
         } else {
-            const mealPrices = { 'Breakfast': 800, 'Lunch': 1500, 'Tea Time': 600, 'Dinner': 1800 };
-            selectedMeals.forEach(meal => {
-                if (mealPrices[meal]) totalAmount += (mealPrices[meal] * guestCount);
-            });
+            const eventPackagePrices = {
+                'Lunch With Pool': 2415,
+                'Menu I': 2900,
+                'Menu II': 2750
+            };
+            if (cateringPackage && eventPackagePrices[cateringPackage]) {
+                totalAmount += (eventPackagePrices[cateringPackage] * guestCount);
+            } else if (cateringPackage === 'Custom') {
+                totalAmount += (Number(customPackagePrice) * guestCount);
+            } else {
+                const mealPrices = { 'Breakfast': 800, 'Lunch': 1500, 'Tea Time': 600, 'Dinner': 1800 };
+                selectedMeals.forEach(meal => {
+                    if (mealPrices[meal]) totalAmount += (mealPrices[meal] * guestCount);
+                });
+            }
         }
 
         const weddingServicePrices = { 'Decorations': 35000, 'DJ/Music': 25000, 'Photography': 40000, 'Videography': 30000, 'Wedding Cake': 20000, 'Lighting System': 20000, 'Flower Arrangements': 15000 };
@@ -256,6 +300,43 @@ export const updateBookingStatus = async (req, res) => {
         booking.bookingStatus = bookingStatus;
         await booking.save();
 
+        if (bookingStatus === 'confirmed') {
+            try {
+                const bookingIdStr = booking._id ? String(booking._id).slice(-8).toUpperCase() : 'N/A';
+                const eventDateStr = new Date(booking.eventDate).toLocaleDateString();
+                const hallName = booking.hallId?.hallName || 'Event Venue';
+                
+                const subject = 'Booking Confirmed - Hotel Janro';
+                const message = `Booking Confirmed!\n\nDear ${booking.customerName},\n\nYour booking has been successfully confirmed.\n\nBooking ID: EV${bookingIdStr}\nEvent Venue: ${hallName}\nEvent Date: ${eventDateStr}\nTime: ${booking.startTime} - ${booking.endTime}\nGuests: ${booking.guestCount}\nTotal Price: Rs. ${booking.totalAmount.toLocaleString()}\nPayment Status: ${booking.paymentStatus}\n\nWe look forward to hosting you.\n\nThank you,\nHotel Janro`;
+                
+                const htmlContent = `
+					<h2>Booking Confirmed!</h2>
+					<p>Dear ${booking.customerName},</p>
+					<p>Your booking has been successfully confirmed.</p>
+					<p>
+						<strong>Booking ID:</strong> EV${bookingIdStr}<br/>
+						<strong>Event Venue:</strong> ${hallName}<br/>
+						<strong>Event Date:</strong> ${eventDateStr}<br/>
+						<strong>Time:</strong> ${booking.startTime} - ${booking.endTime}<br/>
+						<strong>Guests:</strong> ${booking.guestCount}<br/>
+						<strong>Total Price:</strong> Rs. ${booking.totalAmount.toLocaleString()}<br/>
+						<strong>Payment Status:</strong> ${booking.paymentStatus}
+					</p>
+					<p>We look forward to hosting you.</p>
+					<p>Thank you,<br/>Hotel Janro</p>
+				`;
+
+                await sendEmail({
+                    email: booking.customerEmail,
+                    subject,
+                    message,
+                    html: htmlContent
+                });
+            } catch (error) {
+                console.error('Failed to send wedding status update email', error);
+            }
+        }
+
         return res.status(200).json({ success: true, message: 'Booking status updated', data: booking });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
@@ -266,7 +347,7 @@ export const updateBookingStatus = async (req, res) => {
 export const addPayment = async (req, res) => {
     try {
         const { id } = req.params;
-        const { paymentAmount } = req.body;
+        const { paymentAmount, method } = req.body;
 
         if (!paymentAmount || Number(paymentAmount) <= 0) {
             return res.status(400).json({ success: false, message: 'Valid payment amount is required' });
@@ -274,6 +355,13 @@ export const addPayment = async (req, res) => {
 
         const booking = await WeddingBooking.findById(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+        // Authorization: Admin, Receptionist, or Owner
+        const isStaff = ['admin', 'receptionist', 'reception'].includes(req.user?.role);
+        const isOwner = booking.userId && booking.userId.toString() === req.user?._id?.toString();
+        if (!isStaff && !isOwner) {
+            return res.status(403).json({ success: false, message: 'Not authorized to add payment to this booking' });
+        }
 
         booking.advancePaid += Number(paymentAmount);
 
@@ -287,6 +375,21 @@ export const addPayment = async (req, res) => {
         }
 
         await booking.save();
+
+        // Log payment
+        try {
+            await Payment.create({
+                amount: Number(paymentAmount),
+                method: method || 'Online',
+                status: 'Completed',
+                user: booking.userId || "000000000000000000000000",
+                referenceId: booking._id,
+                onModel: 'WeddingBooking'
+            });
+        } catch (err) {
+            console.error("Failed to create Payment record:", err);
+        }
+
         return res.status(200).json({ success: true, message: 'Payment added successfully', data: booking });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });

@@ -17,7 +17,7 @@ dns.setServers(['8.8.8.8', '8.8.4.4']);
 const halls = [
   {
     hallName: "Royal Grand Hall",
-    capacity: 450,
+    capacity: 300,
     price: 15000,
     location: "Main Building, Level 2",
     description: "Our magnificent Grand Ballroom is perfect for lavish weddings and gala events with crystal chandeliers and marble floors.",
@@ -27,7 +27,7 @@ const halls = [
   },
   {
     hallName: "Garden Celebration Hall",
-    capacity: 300,
+    capacity: 200,
     price: 10000,
     location: "Garden Wing, Ground Level",
     description: "Elegant indoor-outdoor style venue surrounded by landscaped gardens, ideal for receptions and wedding ceremonies.",
@@ -37,7 +37,7 @@ const halls = [
   },
   {
     hallName: "Pearl Banquet Hall",
-    capacity: 200,
+    capacity: 150,
     price: 8000,
     location: "East Wing, Level 1",
     description: "A stylish medium-sized banquet hall designed for intimate weddings, engagement functions, and private events.",
@@ -46,32 +46,12 @@ const halls = [
     status: "available"
   },
   {
-    hallName: "Golden Sunset Lawn",
-    capacity: 600,
-    price: 12000,
-    location: "West Side Gardens",
-    description: "Breathtaking outdoor lawn with a scenic view of the horizon, perfect for large wedding ceremonies and sunset receptions.",
-    image: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=1080",
-    type: "Event Area",
-    status: "available"
-  },
-  {
     hallName: "Emerald Pool Terrace",
-    capacity: 150,
+    capacity: 50,
     price: 9000,
     location: "Poolside Level",
     description: "A chic poolside terrace offering a sophisticated atmosphere for cocktail parties, engagement dinners, and small events.",
     image: "https://images.unsplash.com/photo-1566733971257-826502945d58?auto=format&fit=crop&q=80&w=1080",
-    type: "Event Area",
-    status: "available"
-  },
-  {
-    hallName: "Starlight Rooftop",
-    capacity: 100,
-    price: 11000,
-    location: "Executive Tower, Top Floor",
-    description: "An exclusive rooftop venue with panoramic city views, ideal for modern weddings and private corporate celebrations.",
-    image: "https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?auto=format&fit=crop&q=80&w=1080",
     type: "Event Area",
     status: "available"
   }
