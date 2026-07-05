@@ -142,7 +142,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       throw new Error("You can only edit your own orders");
     }
 
-    // Check the 5-minute limit (only for items update, not for status updates by staff)
+    // Check the 5-minute limit (only for items update)
     if (req.body.items) {
       const diffInMinutes = (Date.now() - new Date(order.createdAt).getTime()) / (1000 * 60);
       if (diffInMinutes > 5) {
@@ -153,6 +153,18 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       if (order.orderStatus !== 'Pending') {
         res.status(400);
         throw new Error("Only pending orders can be edited");
+      }
+    }
+
+    // Restrict status updates for customers
+    if (req.body.orderStatus && req.body.orderStatus !== order.orderStatus) {
+      if (req.body.orderStatus !== 'Cancelled') {
+        res.status(403);
+        throw new Error("Customers can only cancel orders.");
+      }
+      if (order.orderStatus !== 'Pending') {
+        res.status(400);
+        throw new Error("Only pending orders can be cancelled.");
       }
     }
   }
