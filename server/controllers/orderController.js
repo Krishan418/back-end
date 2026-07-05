@@ -268,7 +268,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   const updatedOrder = await Order.findByIdAndUpdate(
     req.params.id,
     updateData,
-    { returnDocument: 'after', runValidators: true }
+    { new: true, runValidators: true }
   );
 
   // If local fallback just set it to Paid, create Payment log if it didn't exist
