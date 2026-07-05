@@ -154,43 +154,50 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
         res.status(400);
         throw new Error("Only pending orders can be edited");
       }
+    }
+  }
 
-      // Recalculate totals if items are changed
-      let subtotal = 0;
-      const validatedItems = [];
+  // Recalculate totals if items are changed (for BOTH staff and customers)
+  if (req.body.items) {
+    let subtotal = 0;
+    const validatedItems = [];
 
-      for (const item of req.body.items) {
-        const realMenuItem = await MenuItem.findById(item.menuItemId);
-        if (!realMenuItem) {
-          res.status(404);
-          throw new Error(`Menu item not found: ${item.menuItemId}`);
-        }
-
-        let itemPrice = realMenuItem.price;
-        if (realMenuItem.hasPortions && item.portion) {
-          const selectedPortion = realMenuItem.portions.find(p => p.portionType === item.portion);
-          if (selectedPortion) itemPrice = selectedPortion.price;
-        }
-
-        subtotal += itemPrice * item.quantity;
-        validatedItems.push({
-          menuItemId: realMenuItem._id,
-          name: realMenuItem.name,
-          portion: item.portion || "",
-          price: itemPrice,
-          quantity: item.quantity,
-        });
+    for (const item of req.body.items) {
+      const realMenuItem = await MenuItem.findById(item.menuItemId);
+      if (!realMenuItem) {
+        res.status(404);
+        throw new Error(`Menu item not found: ${item.menuItemId}`);
       }
 
-      req.body.items = validatedItems;
-      req.body.subtotal = subtotal;
-      
-      // Recalculate totalAmount based on existing charges
-      const serviceCharge = order.serviceCharge || 0;
-      const deliveryFee = order.deliveryFee || 0;
-      const discount = order.discount || 0;
-      req.body.totalAmount = Number((subtotal + serviceCharge + deliveryFee - discount).toFixed(2));
+      let itemPrice = realMenuItem.price;
+      if (realMenuItem.hasPortions && item.portion) {
+        const selectedPortion = realMenuItem.portions.find(p => p.portionType === item.portion);
+        if (selectedPortion) itemPrice = selectedPortion.price;
+      }
+
+      subtotal += itemPrice * item.quantity;
+      validatedItems.push({
+        menuItemId: realMenuItem._id,
+        name: realMenuItem.name,
+        portion: item.portion || "",
+        price: itemPrice,
+        quantity: item.quantity,
+      });
     }
+
+    req.body.items = validatedItems;
+    req.body.subtotal = subtotal;
+    
+    // Recalculate totalAmount based on existing charges
+    let serviceCharge = order.serviceCharge || 0;
+    if (order.orderType === 'Dine-in' || order.orderType === 'Room') {
+      serviceCharge = subtotal * 0.1;
+    }
+    req.body.serviceCharge = serviceCharge;
+    
+    const deliveryFee = order.deliveryFee || 0;
+    const discount = order.discount || 0;
+    req.body.totalAmount = Number((subtotal + serviceCharge + deliveryFee - discount).toFixed(2));
   }
 
   let updateData = { ...req.body };
