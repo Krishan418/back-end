@@ -16,7 +16,7 @@ export const createInventoryItem = asyncHandler(async (req, res) => {
 // Update inventory item
 export const updateInventoryItem = asyncHandler(async (req, res) => {
   const item = await Inventory.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
+    returnDocument: 'after',
     runValidators: true
   });
   if (!item) {

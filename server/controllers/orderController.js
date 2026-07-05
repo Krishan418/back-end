@@ -15,13 +15,13 @@ export const createOrder = asyncHandler(async (req, res) => {
   let subtotal = 0;
   const validatedItems = [];
 
-  // Validate each menu item
-  await Promise.all(items.map(async (item) => {
+  // Validate each menu item sequentially to prevent unhandled promise rejections
+  for (const item of items) {
     const realMenuItem = await MenuItem.findById(item.menuItemId);
 
     if (!realMenuItem) {
       res.status(404);
-      throw new Error(`Menu item not found (ID: ${item.menuItemId})`);
+      throw new Error(`Menu item not found (ID: ${item.menuItemId}). It may have been deleted.`);
     }
 
     let itemPrice = realMenuItem.price;
@@ -41,7 +41,7 @@ export const createOrder = asyncHandler(async (req, res) => {
       price: itemPrice,
       quantity: item.quantity,
     });
-  }));
+  }
 
   // Calculate final totals
   const finalSubtotal = req.body.subtotal || subtotal;
@@ -51,7 +51,44 @@ export const createOrder = asyncHandler(async (req, res) => {
 
   const orderNumber = req.body.orderNumber || `POS-${Date.now().toString().slice(-6)}`;
 
-  // Save order to database
+  // Auto-merge logic for Dine-in and Room orders
+  if (orderType === "Dine-in" || orderType === "Room") {
+    let query = {
+      orderType,
+      paymentStatus: { $ne: 'Paid' },
+      orderStatus: { $nin: ['Completed', 'Cancelled'] }
+    };
+    
+    if (orderType === "Dine-in" && tableNumber) {
+      query.tableNumber = { $regex: new RegExp(`^${tableNumber.trim()}$`, 'i') };
+    } else if (orderType === "Room" && roomNumber) {
+      query.roomNumber = { $regex: new RegExp(`^${roomNumber.trim()}$`, 'i') };
+    }
+
+    if (query.tableNumber || query.roomNumber) {
+      const existingOrder = await Order.findOne(query);
+
+      if (existingOrder) {
+        // Merge items
+        existingOrder.items.push(...validatedItems);
+        existingOrder.subtotal += finalSubtotal;
+        
+        if (finalServiceCharge > 0) existingOrder.serviceCharge += finalServiceCharge;
+        if (finalDeliveryFee > 0) existingOrder.deliveryFee += finalDeliveryFee;
+        if (discount > 0) existingOrder.discount += discount;
+        
+        existingOrder.totalAmount = Number((existingOrder.subtotal + existingOrder.serviceCharge + existingOrder.deliveryFee - existingOrder.discount).toFixed(2));
+        existingOrder.balance = Math.max(0, existingOrder.totalAmount - (existingOrder.amountReceived || 0));
+
+        await existingOrder.save();
+        
+        broadcastEvent("orderUpdated", existingOrder);
+        return res.status(200).json(existingOrder);
+      }
+    }
+  }
+
+  // Save new order to database if no mergeable order exists
   const order = await Order.create({
     orderType, tableNumber, roomNumber, deliveryAddress,
     contactNumber, coordinates, customerName, customerUser,
@@ -121,7 +158,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       let subtotal = 0;
       const validatedItems = [];
 
-      await Promise.all(req.body.items.map(async (item) => {
+      for (const item of req.body.items) {
         const realMenuItem = await MenuItem.findById(item.menuItemId);
         if (!realMenuItem) {
           res.status(404);
@@ -142,7 +179,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
           price: itemPrice,
           quantity: item.quantity,
         });
-      }));
+      }
 
       req.body.items = validatedItems;
       req.body.subtotal = subtotal;
@@ -205,7 +242,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   const updatedOrder = await Order.findByIdAndUpdate(
     req.params.id,
     updateData,
-    { new: true, runValidators: true }
+    { returnDocument: 'after', runValidators: true }
   );
 
   broadcastEvent("orderUpdated", updatedOrder);
