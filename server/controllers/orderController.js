@@ -1,6 +1,7 @@
 import Order from "../models/order.js";
 import MenuItem from "../models/MenuItem.js";
 import Inventory from "../models/inventory.js";
+import Payment from "../models/payment.js";
 import { broadcastEvent } from "../utils/socket.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 
@@ -244,6 +245,26 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
     updateData,
     { returnDocument: 'after', runValidators: true }
   );
+
+  // If local fallback just set it to Paid, create Payment log if it didn't exist
+  if (updateData.$set && updateData.$set.paymentStatus === 'Paid' && order.paymentStatus !== 'Paid') {
+    try {
+      // Check if one already exists to avoid duplicates (e.g. if webhook fired)
+      const existingPayment = await Payment.findOne({ referenceId: updatedOrder._id, status: 'Completed' });
+      if (!existingPayment) {
+        await Payment.create({
+          amount: updatedOrder.totalAmount,
+          method: 'Online',
+          status: 'Completed',
+          user: updatedOrder.customerUser || "000000000000000000000000",
+          referenceId: updatedOrder._id,
+          onModel: "Order"
+        });
+      }
+    } catch (err) {
+      console.error("Failed to create Payment log:", err);
+    }
+  }
 
   broadcastEvent("orderUpdated", updatedOrder);
 
