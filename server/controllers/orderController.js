@@ -166,6 +166,12 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
         res.status(400);
         throw new Error("Only pending orders can be cancelled.");
       }
+      
+      const diffInMinutes = (Date.now() - new Date(order.createdAt).getTime()) / (1000 * 60);
+      if (diffInMinutes > 5) {
+        res.status(400);
+        throw new Error("Orders cannot be cancelled after 5 minutes.");
+      }
     }
   }
 
