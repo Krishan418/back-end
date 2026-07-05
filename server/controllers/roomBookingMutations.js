@@ -7,7 +7,7 @@ import {
 	isValidStatusTransition,
 	sanitizeDecorationItems,
 	calculateDecorationTotal
-} from './roombookinghekpers.js';
+} from './roombookinghelpers.js';
 
 const isAcRoom = (roomName, specialRequests) => {
   const norm = (roomName || '').toLowerCase().replace(/[^a-z]/g, '');
