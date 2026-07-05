@@ -142,7 +142,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       throw new Error("You can only edit your own orders");
     }
 
-    // Check the 5-minute limit (only for items update, not for status updates by staff)
+    // Check the 5-minute limit (only for items update)
     if (req.body.items) {
       const diffInMinutes = (Date.now() - new Date(order.createdAt).getTime()) / (1000 * 60);
       if (diffInMinutes > 5) {
@@ -153,6 +153,26 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       if (order.orderStatus !== 'Pending') {
         res.status(400);
         throw new Error("Only pending orders can be edited");
+      }
+    }
+
+    // Restrict status updates for customers
+    if (req.body.orderStatus && req.body.orderStatus !== order.orderStatus) {
+      if (req.body.orderStatus === 'Cancelled') {
+        if (order.orderStatus !== 'Pending') {
+          res.status(400);
+          throw new Error("Only pending orders can be cancelled.");
+        }
+        const diffInMinutes = (Date.now() - new Date(order.createdAt).getTime()) / (1000 * 60);
+        if (diffInMinutes > 5) {
+          res.status(400);
+          throw new Error("Orders cannot be cancelled after 5 minutes.");
+        }
+      } else if (req.body.orderStatus === 'Completed' && req.body.paymentStatus === 'Paid') {
+        // Allowed from PayHere fallback
+      } else {
+        res.status(403);
+        throw new Error("Customers can only cancel orders or finalize payments.");
       }
     }
   }
@@ -250,7 +270,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   const updatedOrder = await Order.findByIdAndUpdate(
     req.params.id,
     updateData,
-    { returnDocument: 'after', runValidators: true }
+    { new: true, runValidators: true }
   );
 
   // If local fallback just set it to Paid, create Payment log if it didn't exist
@@ -261,7 +281,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       if (!existingPayment) {
         await Payment.create({
           amount: updatedOrder.totalAmount,
-          method: 'Online',
+          method: updatedOrder.paymentMethod || 'Online',
           status: 'Completed',
           user: updatedOrder.customerUser || "000000000000000000000000",
           referenceId: updatedOrder._id,
@@ -289,6 +309,25 @@ export const deleteOrder = asyncHandler(async (req, res) => {
   broadcastEvent("orderDeleted", { id: req.params.id });
 
   res.status(200).json({ message: "Order deleted successfully" });
+});
+
+// Abandon order (for failed/dismissed checkouts)
+export const abandonOrder = asyncHandler(async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) {
+    res.status(404);
+    throw new Error("Order not found");
+  }
+
+  if (order.orderStatus !== 'Pending' || order.paymentStatus !== 'Unpaid') {
+    res.status(400);
+    throw new Error("Only pending unpaid orders can be abandoned");
+  }
+
+  await Order.findByIdAndDelete(req.params.id);
+  broadcastEvent("orderDeleted", { id: req.params.id });
+
+  res.status(200).json({ message: "Order abandoned successfully" });
 });
 
 // Get item popularity trends

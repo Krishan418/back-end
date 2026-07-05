@@ -18,7 +18,11 @@ const generateGlobalRoomNumbers = (allRooms) => {
 	for (const r of sortedRooms) {
 		const lowerName = (r.name || '').toLowerCase().trim();
 		const fallbackTotal = lowerName.includes('standard room') ? 6 : 2;
-		const totalRoomsCount = r.totalRooms !== undefined ? r.totalRooms : fallbackTotal;
+		let totalRoomsCount = r.totalRooms !== undefined ? r.totalRooms : fallbackTotal;
+		// For legacy "Standard Room" (not specific AC/Non-AC variant), always ensure 6 rooms
+		if (lowerName === 'standard room') {
+			totalRoomsCount = Math.max(totalRoomsCount, 6);
+		}
 		
 		let nums = [];
 		for (let i = 0; i < totalRoomsCount; i++) {

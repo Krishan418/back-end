@@ -97,6 +97,7 @@ export const handlePayHereNotification = async (req, res) => {
         if (booking) {
           booking.status = "confirmed";
           booking.paymentStatus = "Paid";
+          booking.paymentMethod = "Online";
           await booking.save();
           userId = booking.user;
           onModelType = "Booking";
@@ -107,6 +108,7 @@ export const handlePayHereNotification = async (req, res) => {
         if (booking) {
           booking.bookingStatus = "confirmed";
           booking.paymentStatus = "Fully Paid"; // Assuming full payment via PayHere
+          booking.paymentMethod = "Online";
           await booking.save();
           userId = booking.userId;
           onModelType = "WeddingBooking";
@@ -116,6 +118,8 @@ export const handlePayHereNotification = async (req, res) => {
         const order = await Order.findById(order_id);
         if (order) {
           order.paymentStatus = "Paid";
+          order.paymentMethod = "Online";
+          order.amountReceived = order.totalAmount;
           order.orderStatus = "Completed";
           await order.save();
           userId = order.user;
