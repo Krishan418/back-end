@@ -52,6 +52,18 @@ const settingsSchema = new mongoose.Schema({
     bankName: { type: String, required: true },
     branchName: { type: String, required: true },
     accountNumber: { type: String, required: true }
+  }],
+  bankDetails: {
+    bankName: { type: String, default: '' },
+    branchName: { type: String, default: '' },
+    accountNumber: { type: String, default: '' },
+    accountHolderName: { type: String, default: '' }
+  },
+  cards: [{
+    cardHolderName: { type: String, required: true },
+    cardNumber: { type: String, required: true },
+    expiryDate: { type: String, required: true },
+    cardType: { type: String, default: 'Visa' }
   }]
 }, { timestamps: true });
 
