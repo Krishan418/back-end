@@ -254,7 +254,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       if (!existingPayment) {
         await Payment.create({
           amount: updatedOrder.totalAmount,
-          method: 'Online',
+          method: updatedOrder.paymentMethod || 'Online',
           status: 'Completed',
           user: updatedOrder.customerUser || "000000000000000000000000",
           referenceId: updatedOrder._id,
