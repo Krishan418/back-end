@@ -18,13 +18,24 @@ export const STATUS_TRANSITIONS = {
 	cancelled: ['pending', 'confirmed']
 };
 
-// Converts check-in/check-out dates into total nights.
+/**
+ * Calculates the total nights between check-in and check-out dates.
+ * @param {string|Date} checkInDate - The starting date of the stay.
+ * @param {string|Date} checkOutDate - The ending date of the stay.
+ * @returns {number} The number of nights, rounded up.
+ */
 export const calculateNights = (checkInDate, checkOutDate) => {
 	const diff = new Date(checkOutDate).getTime() - new Date(checkInDate).getTime();
 	return Math.ceil(diff / ONE_DAY_MS);
 };
 
-// Allows same-status updates and valid next transitions only.
+/**
+ * Validates status transitions to ensure only authorized status flow is followed.
+ * Allows same-status updates and valid next transitions only.
+ * @param {string} fromStatus - The current status of the booking.
+ * @param {string} toStatus - The target status to transition to.
+ * @returns {boolean} True if the status transition is valid, false otherwise.
+ */
 export const isValidStatusTransition = (fromStatus, toStatus) => {
 	if (fromStatus === toStatus) {
 		return true;
@@ -33,7 +44,11 @@ export const isValidStatusTransition = (fromStatus, toStatus) => {
 	return (STATUS_TRANSITIONS[fromStatus] || []).includes(toStatus);
 };
 
-// Keeps only valid, unique honeymoon decoration options.
+/**
+ * Filters the input array to keep only valid, unique honeymoon decoration options.
+ * @param {Array<string>} items - The list of requested decoration item names.
+ * @returns {Array<string>} A list of valid, unique decoration item names.
+ */
 export const sanitizeDecorationItems = (items) => {
 	if (!Array.isArray(items)) {
 		return [];
@@ -44,7 +59,11 @@ export const sanitizeDecorationItems = (items) => {
 	return uniqueItems.filter((item) => validNames.includes(item));
 };
 
-// Calculates the total price of selected decorations.
+/**
+ * Calculates the total price of all valid selected decorations.
+ * @param {Array<string>} items - The list of decoration item names.
+ * @returns {number} The cumulative price of the selected decorations.
+ */
 export const calculateDecorationTotal = (items) => {
 	return items.reduce((sum, itemName) => {
 		const item = HONEYMOON_DECORATION_ITEMS.find((i) => i.name === itemName);
@@ -52,11 +71,18 @@ export const calculateDecorationTotal = (items) => {
 	}, 0);
 };
 
-// Safely rolls back DB transaction, then sends API response.
+/**
+ * Safely rolls back a Mongoose/MongoDB session transaction and sends the API error response.
+ * @param {Object} session - The active database session.
+ * @param {Object} res - The Express response object.
+ * @param {number} statusCode - The HTTP status code to respond with.
+ * @param {Object} payload - The JSON payload to send in the response.
+ * @returns {Promise<Object>} The sent Express response.
+ */
 export const abortTransactionWithResponse = async (session, res, statusCode, payload) => {
 	if (session && session.inTransaction()) {
 		await session.abortTransaction();
 	}
 
 	return res.status(statusCode).json(payload);
-};
+};
