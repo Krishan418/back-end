@@ -60,25 +60,36 @@ const makeRestaurantOrdersCsv = (orders, currencySymbol) => {
 
 // Calculate report details helper function
 const calculateReportDetails = async (dateRange) => {
+    let now = new Date();
+    
+    // Aligns reporting date context with database contents
+    const latestBooking = await Booking.findOne({ status: { $ne: 'cancelled' } }).sort({ checkInDate: -1 });
+    if (latestBooking && latestBooking.checkInDate) {
+        const latestDate = new Date(latestBooking.checkInDate);
+        if (latestDate < now) {
+            now = new Date(latestDate);
+        }
+    }
+
     let startDate = null;
     let endDate = null;
     if (dateRange && dateRange !== 'All Time') {
-        const now = new Date();
+        const rangeNow = new Date(now.getTime());
         if (dateRange === 'Today') {
-            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+            startDate = new Date(rangeNow.getFullYear(), rangeNow.getMonth(), rangeNow.getDate());
+            endDate = new Date(rangeNow.getFullYear(), rangeNow.getMonth(), rangeNow.getDate() + 1);
         } else if (dateRange === 'This Week') {
-            startDate = new Date(now.setDate(now.getDate() - now.getDay()));
+            startDate = new Date(rangeNow.setDate(rangeNow.getDate() - rangeNow.getDay()));
             startDate.setHours(0,0,0,0);
         } else if (dateRange === 'This Month') {
-            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            startDate = new Date(rangeNow.getFullYear(), rangeNow.getMonth(), 1);
         } else if (dateRange === 'Last Month') {
-            startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-            endDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            startDate = new Date(rangeNow.getFullYear(), rangeNow.getMonth() - 1, 1);
+            endDate = new Date(rangeNow.getFullYear(), rangeNow.getMonth(), 1);
         } else if (dateRange === 'This Quarter') {
-            startDate = new Date(now.getFullYear(), Math.floor(now.getMonth()/3)*3, 1);
+            startDate = new Date(rangeNow.getFullYear(), Math.floor(rangeNow.getMonth()/3)*3, 1);
         } else if (dateRange === 'This Year') {
-            startDate = new Date(now.getFullYear(), 0, 1);
+            startDate = new Date(rangeNow.getFullYear(), 0, 1);
         }
     }
 
@@ -91,7 +102,7 @@ const calculateReportDetails = async (dateRange) => {
         return true;
     };
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = now.toISOString().split('T')[0];
 
     // Fetch all data concurrently
     const [rooms, bookings, poolBookings, weddingBookings, orders] = await Promise.all([
@@ -230,7 +241,6 @@ const calculateReportDetails = async (dateRange) => {
         last6Months.push(monthlyStats[mIndex]);
     }
 
-    const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonthIndex = now.getMonth();
 
@@ -274,7 +284,7 @@ const calculateReportDetails = async (dateRange) => {
     const weeklyOccupancy = [];
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     for (let i = 6; i >= 0; i--) {
-        const d = new Date();
+        const d = new Date(now.getTime());
         d.setDate(d.getDate() - i);
         const dStr = d.toISOString().split('T')[0];
         const dDay = dayNames[d.getDay()];
