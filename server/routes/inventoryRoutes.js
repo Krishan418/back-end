@@ -9,6 +9,7 @@ import {
 import {
   issueStock,
   settleStock,
+  restockStock,
   getStockLogs
 } from "../controllers/inventoryLogController.js";
 import { protect, authorize } from "../middleware/authMiddleware.js";
@@ -20,6 +21,7 @@ router.get("/low-stock", protect, authorize("admin", "manager"), getLowStockItem
 router.get("/logs", protect, authorize("admin", "manager"), getStockLogs);
 router.post("/issue", protect, authorize("admin", "manager"), issueStock);
 router.post("/settle", protect, authorize("admin", "manager"), settleStock);
+router.post("/restock", protect, authorize("admin", "manager"), restockStock);
 router.post("/", protect, authorize("admin", "manager"), createInventoryItem);
 router.put("/:id", protect, authorize("admin", "manager"), updateInventoryItem);
 router.delete("/:id", protect, authorize("admin"), deleteInventoryItem);

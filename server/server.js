@@ -17,7 +17,6 @@ import inventoryRoutes from "./routes/inventoryRoutes.js";
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import mongoSanitize from 'express-mongo-sanitize';
-import xss from 'xss-clean';
 import poolBookingRoutes from "./routes/poolBookingRoutes.js";
 import settingsRoutes from "./routes/settingsRoutes.js";
 import adminReportRoutes from "./routes/adminReportRoutes.js";
@@ -25,6 +24,9 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 import { createServer } from "http";
 import { initSocket } from "./utils/socket.js";
 import gymRoutes from "./routes/gymRoutes.js";
+import payhereRoutes from "./routes/payhereRoutes.js";
+import contactRoutes from "./routes/contactRoutes.js";
+import errorHandler from "./middleware/errorHandler.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -54,10 +56,12 @@ app.use((req, res, next) => {
 });
 
 // Data sanitization against NoSQL query injection
-app.use(mongoSanitize());
-
-// Data sanitization against XSS
-app.use(xss());
+app.use((req, res, next) => {
+  if (req.body) mongoSanitize.sanitize(req.body);
+  if (req.params) mongoSanitize.sanitize(req.params);
+  if (req.query) mongoSanitize.sanitize(req.query);
+  next();
+});
 
 // Serve static files from uploads directory
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
@@ -87,15 +91,11 @@ app.use("/api/settings", settingsRoutes);
 app.use("/api/reports", adminReportRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/gym", gymRoutes);
+app.use("/api/payments", payhereRoutes);
+app.use("/api/contact", contactRoutes);
 
 // Global error handler
-app.use((err, req, res, next) => {
-    console.error('SERVER ERROR:', err.stack);
-    res.status(500).json({
-        success: false,
-        message: err.message || 'Internal Server Error'
-    });
-});
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 

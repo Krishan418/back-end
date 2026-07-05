@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import sendEmail from '../utils/email.js';
 import Settings from '../models/Settings.js';
+import { generateSecret, verifyTOTP } from '../utils/totp.js';
 
 
 const getOTPTemplate = (otp, name, hotelName = 'Hotel Janro') => {
@@ -101,7 +102,7 @@ const getOTPTemplate = (otp, name, hotelName = 'Hotel Janro') => {
 };
 
 
-const getStaffWelcomeTemplate = (name, role, password, hotelName = 'Hotel Janro') => {
+const getStaffWelcomeTemplate = (name, email, role, password, hotelName = 'Hotel Janro') => {
     return `
     <!DOCTYPE html>
     <html>
@@ -171,11 +172,11 @@ const getStaffWelcomeTemplate = (name, role, password, hotelName = 'Hotel Janro'
                 
                 <div class="info-box">
                     <p style="margin-top: 0;"><strong>Your Account Credentials:</strong></p>
-                    <p><strong>Email:</strong> ${name}</p>
+                    <p><strong>Email Address:</strong> ${email}</p>
                     <p><strong>Temporary Password:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px;">${password}</code></p>
                 </div>
                 
-                <p>Please log in to the admin dashboard using your email and the temporary password provided above. For security reasons, we strongly recommend changing your password immediately after your first login.</p>
+                <p>Please log in using your email and the temporary password provided above. For security reasons, we strongly recommend changing your password immediately after your first login.</p>
                 
                 <p>We look forward to working with you and seeing your contributions to our success!</p>
             </div>
@@ -225,38 +226,22 @@ export const register = async (req, res) => {
             isVerified: true
         });
 
-        // Generate & hash 6-digit OTP
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
-        
-        user.verificationOTP = hashedOTP;
-        user.verificationOTPExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
-        await user.save({ validateBeforeSave: false });
-
-        // Fetch settings for hotel name
-        const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
-        const hotelName = settings.hotelName;
-
-        // Send OTP via email
-        const message = `Welcome to ${hotelName}!\n\nYour email verification code is: ${otp}\n\nThis code will expire in 10 minutes.`;
-        const html = getOTPTemplate(otp, user.name, hotelName);
-        
-        try {
-            await sendEmail({
-                email: user.email,
-                subject: `${hotelName} - Verify Your Email`,
-                message,
-                html,
-                hotelName
-            });
-        } catch (error) {
-            console.error("Failed to send OTP email", error);
-        }
+        // Generate JWT tokens
+        const accessToken = generateAccessToken(user._id, user.role);
+        const refreshToken = generateRefreshToken(user._id, user.role);
 
         res.status(201).json({
             success: true,
-            requireVerification: true,
-            message: "Registration successful. Please verify your email."
+            message: "Registration successful.",
+            data: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                phone: user.phone,
+                role: user.role,
+                token: accessToken,
+                refreshToken
+            }
         });
     } catch (error) {
         res.status(500).json({ 
@@ -278,7 +263,8 @@ export const login = async (req, res) => {
             });
         }
 
-        const user = await User.findOne({ email }).select('+password');
+        const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+        const user = await User.findOne({ email: normalizedEmail }).select('+password');
         if (!user) {
             return res.status(401).json({ 
                 success: false,
@@ -312,6 +298,15 @@ export const login = async (req, res) => {
             });
         }
 
+        // Check if two-factor is active
+        if (user.twoFactorEnabled) {
+            return res.status(200).json({
+                success: true,
+                twoFactorRequired: true,
+                userId: user._id
+            });
+        }
+
         // Generate JWT tokens
         const accessToken = generateAccessToken(user._id, user.role);
         const refreshToken = generateRefreshToken(user._id, user.role);
@@ -335,6 +330,14 @@ export const login = async (req, res) => {
             message: error.message 
         });
     }
+};
+
+// Google login is not wired up yet; keep the route import valid and return a clear response.
+export const googleLogin = async (req, res) => {
+    return res.status(501).json({
+        success: false,
+        message: 'Google login is not implemented yet.'
+    });
 };
 
 // Get logged-in user profile
@@ -391,6 +394,16 @@ export const updateUserRole = async (req, res) => {
                 success: false,
                 message: 'User not found'
             });
+        }
+
+        if (role.toLowerCase() === 'admin' && user.role.toLowerCase() !== 'admin') {
+            const adminCount = await User.countDocuments({ role: 'admin' });
+            if (adminCount >= 2) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Maximum limit of 2 admins has been reached. Cannot promote another user to admin.'
+                });
+            }
         }
 
         user.role = role;
@@ -451,7 +464,7 @@ export const updateMe = async (req, res) => {
         const user = await User.findByIdAndUpdate(
             req.user.id,
             { name, email, phone, address, emergencyContact },
-            { new: true, runValidators: true }
+            { returnDocument: 'after', runValidators: true }
         );
 
         res.status(200).json({
@@ -502,7 +515,7 @@ export const deactivateUser = async (req, res) => {
         const user = await User.findByIdAndUpdate(
             req.params.id,
             { status },
-            { new: true, runValidators: true }
+            { returnDocument: 'after', runValidators: true }
         );
 
         if (!user) {
@@ -524,7 +537,9 @@ export const createStaff = async (req, res) => {
     try {
         const { 
             name, email, phone, role, department, salary, joinDate, status,
-            nic, employeeId, address, emergencyContact, emergencyContactPhone 
+            nic, employeeId, address, emergencyContact, emergencyContactPhone,
+            employmentType, hourlyRate, startTime, endTime, additionalHours, bonus,
+            password
         } = req.body;
         const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
@@ -532,16 +547,64 @@ export const createStaff = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Name and email are required' });
         }
 
-        const allowedRoles = ['staff', 'manager', 'receptionist', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance'];
+        // Email Validation
+        const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+        if (!emailRegex.test(normalizedEmail)) {
+            return res.status(400).json({ success: false, message: 'Please provide a valid email address' });
+        }
+
+        // Phone Validation (Allow full phone number with international country codes)
+        const phoneRegex = /^\+?[0-9\s\-()]{9,20}$/;
+        if (phone && !phoneRegex.test(phone)) {
+            return res.status(400).json({ success: false, message: 'Please provide a valid phone number' });
+        }
+
+        // NIC Validation (9 digits + V/X or 12 digits)
+        if (!nic) {
+            return res.status(400).json({ success: false, message: 'NIC number is required' });
+        }
+        const nicRegex = /^(?:\d{9}[vVxX]|\d{12})$/;
+        if (!nicRegex.test(nic)) {
+            return res.status(400).json({ success: false, message: 'Invalid NIC format. Use 9 digits + V/X or 12 digits' });
+        }
+
+        const allowedRoles = ['staff', 'manager', 'receptionist', 'cashier', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance', 'admin'];
         const assignedRole = (role || 'staff').toLowerCase();
         if (!allowedRoles.includes(assignedRole)) {
             return res.status(400).json({ success: false, message: 'Invalid role for this endpoint' });
         }
 
+        if (assignedRole === 'admin') {
+            const adminCount = await User.countDocuments({ role: 'admin' });
+            if (adminCount >= 2) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Maximum limit of 2 admins has been reached. Cannot create another admin account.'
+                });
+            }
+        }
+
         const existing = await User.findOne({ email: normalizedEmail });
         if (existing) return res.status(400).json({ success: false, message: 'User already exists' });
 
-        const tempPassword = `Staff@${Math.random().toString(36).slice(2,8)}`;
+        if (joinDate && new Date(joinDate) > new Date()) {
+            return res.status(400).json({ success: false, message: 'Join date cannot be in the future' });
+        }
+
+        let finalEmployeeId = employeeId;
+        if (!finalEmployeeId) {
+            let count = await User.countDocuments({ role: { $in: ['staff', 'manager', 'receptionist', 'cashier', 'chef', 'waiter', 'housekeeping', 'security', 'maintenance', 'admin'] } });
+            let generatedId = `STF-${String(count + 1).padStart(3, '0')}`;
+            let exists = await User.findOne({ employeeId: generatedId });
+            while (exists) {
+                count++;
+                generatedId = `STF-${String(count + 1).padStart(3, '0')}`;
+                exists = await User.findOne({ employeeId: generatedId });
+            }
+            finalEmployeeId = generatedId;
+        }
+
+        const tempPassword = password || `Staff@${Math.random().toString(36).slice(2,8)}`;
 
         const user = await User.create({
             name,
@@ -555,10 +618,16 @@ export const createStaff = async (req, res) => {
             joinDate,
             status: status || 'active',
             nic,
-            employeeId,
+            employeeId: finalEmployeeId,
             address,
             emergencyContact,
             emergencyContactPhone,
+            employmentType: employmentType || 'permanent',
+            hourlyRate: hourlyRate || 0,
+            startTime,
+            endTime,
+            additionalHours: additionalHours || 0,
+            bonus: bonus || 0,
             isVerified: true
         });
 
@@ -567,23 +636,40 @@ export const createStaff = async (req, res) => {
         const hotelName = settings.hotelName;
 
         // Send Welcome email with credentials
-        const message = `Congratulations ${name}! Welcome to the ${hotelName} team as a ${assignedRole}. Your temporary password is: ${tempPassword}`;
-        const html = getStaffWelcomeTemplate(name, assignedRole, tempPassword, hotelName);
+        const message = `Congratulations ${name}! Welcome to the ${hotelName} team as a ${assignedRole}. Your login email is: ${normalizedEmail} and temporary password is: ${tempPassword}`;
+        const html = getStaffWelcomeTemplate(name, normalizedEmail, assignedRole, tempPassword, hotelName);
         
-        try {
-            await sendEmail({
+        // Check if SMTP email credentials are configured
+        const emailHost = process.env.EMAIL_HOST || process.env.SMTP_HOST;
+        const emailPort = process.env.EMAIL_PORT || process.env.SMTP_PORT;
+        const emailUser = process.env.EMAIL_USER || process.env.SMTP_USER;
+        const emailPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+        const smtpReady = Boolean(
+            emailHost &&
+            emailPort &&
+            emailUser &&
+            emailPass &&
+            !['localhost', '127.0.0.1'].includes(String(emailHost))
+        );
+
+        let emailSent = false;
+        const canSendWelcomeEmail = settings.notifications?.staffUpdates !== false;
+        if (smtpReady && canSendWelcomeEmail) {
+            emailSent = true;
+            // Send email in the background asynchronously without awaiting it
+            sendEmail({
                 email: user.email,
                 subject: `Congratulations! Welcome to ${hotelName}`,
                 message,
-                html,
-                hotelName
+                html
+            }).catch(emailError => {
+                console.error('Failed to send welcome email:', emailError);
             });
-        } catch (error) {
-            console.error("Failed to send staff welcome email", error);
         }
 
         res.status(201).json({
             success: true,
+            emailSent,
             data: {
                 _id: user._id,
                 name: user.name,
@@ -598,7 +684,14 @@ export const createStaff = async (req, res) => {
                 employeeId: user.employeeId,
                 address: user.address,
                 emergencyContact: user.emergencyContact,
-                emergencyContactPhone: user.emergencyContactPhone
+                emergencyContactPhone: user.emergencyContactPhone,
+                employmentType: user.employmentType,
+                hourlyRate: user.hourlyRate,
+                startTime: user.startTime,
+                endTime: user.endTime,
+                additionalHours: user.additionalHours,
+                bonus: user.bonus,
+                tempPassword
             }
         });
     } catch (error) {
@@ -611,19 +704,60 @@ export const updateUser = async (req, res) => {
     try {
         const allowed = [
             'name', 'phone', 'role', 'department', 'salary', 'joinDate', 'status', 'email',
-            'nic', 'employeeId', 'address', 'emergencyContact', 'emergencyContactPhone'
+            'nic', 'employeeId', 'address', 'emergencyContact', 'emergencyContactPhone',
+            'employmentType', 'hourlyRate', 'startTime', 'endTime', 'additionalHours', 'bonus'
         ];
         const updates = {};
         for (const key of allowed) {
             if (req.body[key] !== undefined) updates[key] = req.body[key];
         }
 
+        // Email Validation if being updated
+        if (updates.email) {
+            const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+            if (!emailRegex.test(updates.email)) {
+                return res.status(400).json({ success: false, message: 'Please provide a valid email address' });
+            }
+        }
+
+        // Phone Validation if being updated
+        if (updates.phone) {
+            const phoneRegex = /^\+?[0-9\s\-()]{9,20}$/;
+            if (!phoneRegex.test(updates.phone)) {
+                return res.status(400).json({ success: false, message: 'Please provide a valid phone number' });
+            }
+        }
+
+        // NIC Validation if being updated
+        if (updates.nic !== undefined) {
+            if (!updates.nic) {
+                return res.status(400).json({ success: false, message: 'NIC number is required' });
+            }
+            const nicRegex = /^(?:\d{9}[vVxX]|\d{12})$/;
+            if (!nicRegex.test(updates.nic)) {
+                return res.status(400).json({ success: false, message: 'Invalid NIC format' });
+            }
+        }
+
+        // Join Date validation if being updated
+        if (updates.joinDate && new Date(updates.joinDate) > new Date()) {
+            return res.status(400).json({ success: false, message: 'Join date cannot be in the future' });
+        }
+
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
 
-        if (updates.role && updates.role === 'admin') {
-            return res.status(403).json({ success: false, message: 'Cannot assign admin role via this endpoint' });
+        if (updates.role && updates.role.toLowerCase() === 'admin') {
+            if (user.role.toLowerCase() !== 'admin') {
+                const adminCount = await User.countDocuments({ role: 'admin' });
+                if (adminCount >= 2) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Maximum limit of 2 admins has been reached. Cannot promote another user to admin.'
+                    });
+                }
+            }
         }
 
         Object.assign(user, updates);
@@ -643,7 +777,13 @@ export const updateUser = async (req, res) => {
             employeeId: user.employeeId,
             address: user.address,
             emergencyContact: user.emergencyContact,
-            emergencyContactPhone: user.emergencyContactPhone
+            emergencyContactPhone: user.emergencyContactPhone,
+            employmentType: user.employmentType,
+            hourlyRate: user.hourlyRate,
+            startTime: user.startTime,
+            endTime: user.endTime,
+            additionalHours: user.additionalHours,
+            bonus: user.bonus
         }});
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -657,7 +797,12 @@ export const deleteUser = async (req, res) => {
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
         if (user.role === 'admin') {
-            return res.status(403).json({ success: false, message: 'Cannot delete admin users' });
+            if (user._id.toString() === req.user._id.toString()) {
+                return res.status(403).json({ success: false, message: 'Cannot delete your own admin account.' });
+            }
+            if (user.email === 'admin@hoteljanro.com') {
+                return res.status(403).json({ success: false, message: 'Cannot delete the primary system admin account.' });
+            }
         }
 
         await User.findByIdAndDelete(req.params.id);
@@ -679,6 +824,10 @@ export const changePassword = async (req, res) => {
 
         if (newPassword !== confirmPassword) {
             return res.status(400).json({ success: false, message: 'New passwords do not match' });
+        }
+
+        if (currentPassword === newPassword) {
+            return res.status(400).json({ success: false, message: 'New password cannot be the same as the current password' });
         }
 
         const user = await User.findById(req.user._id).select('+password');
@@ -831,240 +980,110 @@ export const verifyEmail = async (req, res) => {
     }
 };
 
-// Resend Verification OTP
-export const resendOTP = async (req, res) => {
+// Setup 2FA
+export const setup2FA = async (req, res) => {
     try {
-        const { email } = req.body;
-
-        if (!email) {
-            return res.status(400).json({ success: false, message: 'Please provide email' });
-        }
-
-        const user = await User.findOne({ email });
-
+        const user = await User.findById(req.user._id);
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found' });
         }
 
-        if (user.isVerified) {
-            return res.status(400).json({ success: false, message: 'User is already verified' });
-        }
+        const secret = generateSecret();
+        const email = user.email;
+        const otpauthUrl = `otpauth://totp/HotelJanro:${encodeURIComponent(email)}?secret=${secret}&issuer=HotelJanro`;
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpauthUrl)}`;
 
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
+        res.status(200).json({
+            success: true,
+            secret,
+            qrCodeUrl
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Verify & Enable 2FA
+export const verify2FA = async (req, res) => {
+    try {
+        const { secret, code } = req.body;
         
-        user.verificationOTP = hashedOTP;
-        user.verificationOTPExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+        if (!secret || !code) {
+            return res.status(400).json({ success: false, message: 'Secret and verification code are required' });
+        }
+
+        const isValid = verifyTOTP(secret, code);
+        if (!isValid) {
+            return res.status(400).json({ success: false, message: 'Invalid verification code' });
+        }
+
+        const user = await User.findById(req.user._id).select('+twoFactorSecret');
+        user.twoFactorSecret = secret;
+        user.twoFactorEnabled = true;
         await user.save({ validateBeforeSave: false });
 
-        // Fetch settings for hotel name
-        const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
-        const hotelName = settings.hotelName;
-
-        // Send OTP via email
-        const message = `Welcome to ${hotelName}!\n\nYour new email verification code is: ${otp}\n\nThis code will expire in 10 minutes.`;
-        const html = getOTPTemplate(otp, user.name, hotelName);
-        
-        try {
-            await sendEmail({
-                email: user.email,
-                subject: `${hotelName} - Verify Your Email`,
-                message,
-                html,
-                hotelName
-            });
-
-            res.status(200).json({ success: true, message: 'A new verification code has been sent to your email.' });
-        } catch (error) {
-            console.error("Failed to send resend OTP email", error);
-            res.status(500).json({ success: false, message: 'Failed to send verification email. Please try again.' });
-        }
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-// Request Email Change
-export const requestEmailChange = async (req, res) => {
-    try {
-        const { newEmail } = req.body;
-        const userId = req.user.id;
-
-        if (!newEmail) {
-            return res.status(400).json({ success: false, message: 'Please provide the new email address' });
-        }
-
-        const existingUser = await User.findOne({ email: newEmail });
-        if (existingUser) {
-            return res.status(400).json({ success: false, message: 'This email is already in use' });
-        }
-
-        const user = await User.findById(userId);
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'User not found' });
-        }
-
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
-
-        user.pendingEmail = newEmail;
-        user.verificationOTP = hashedOTP;
-        user.verificationOTPExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
-        await user.save({ validateBeforeSave: false });
-
-
-        const html = `
-            <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                <h2 style="color: #0F172A;">Confirm Your New Email Address</h2>
-                <p>Hello ${user.name},</p>
-                <p>You requested to change your email address to <strong>${newEmail}</strong>. Please use the verification code below to confirm this change:</p>
-                <div style="background: #F8FAFC; padding: 20px; text-align: center; border: 2px dashed #D4AF37; margin: 20px 0;">
-                    <h1 style="letter-spacing: 10px; color: #0F172A; margin: 0;">${otp}</h1>
-                </div>
-                <p>If you did not request this change, please ignore this email.</p>
-                <p style="color: #94A3B8; font-size: 12px;">This code will expire in 10 minutes.</p>
-            </div>
-        `;
-
-        try {
-            await sendEmail({
-                email: newEmail,
-                subject: 'Hotel Janro - Confirm Email Change',
-                message: `Your verification code for email change is: ${otp}`,
-                html
-            });
-
-            res.status(200).json({ success: true, message: 'Verification code sent to your new email address' });
-        } catch (error) {
-            console.error("Email change OTP error:", error);
-            res.status(500).json({ success: false, message: 'Failed to send verification email' });
-        }
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-// Verify Email Change
-export const verifyEmailChange = async (req, res) => {
-    try {
-        const { otp } = req.body;
-        const userId = req.user.id;
-
-        if (!otp) {
-            return res.status(400).json({ success: false, message: 'Please provide the verification code' });
-        }
-
-        const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
-
-        const user = await User.findOne({
-            _id: userId,
-            verificationOTP: hashedOTP,
-            verificationOTPExpire: { $gt: Date.now() }
-        });
-
-        if (!user || !user.pendingEmail) {
-            return res.status(400).json({ success: false, message: 'Invalid or expired verification code' });
-        }
-
-
-        user.email = user.pendingEmail;
-        user.pendingEmail = undefined;
-        user.verificationOTP = undefined;
-        user.verificationOTPExpire = undefined;
-        user.isVerified = true;
-
-        await user.save({ validateBeforeSave: false });
-
-        res.status(200).json({ 
-            success: true, 
-            message: 'Email address updated successfully! Please log in again with your new email.',
-            data: { email: user.email }
+        res.status(200).json({
+            success: true,
+            message: 'Two-Factor Authentication enabled successfully!'
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
-// Google Sign-In Login/Signup Controller
-export const googleLogin = async (req, res) => {
+// Disable 2FA
+export const disable2FA = async (req, res) => {
     try {
-        const { credential } = req.body;
+        const user = await User.findById(req.user._id);
+        user.twoFactorSecret = undefined;
+        user.twoFactorEnabled = false;
+        await user.save({ validateBeforeSave: false });
 
-        if (!credential) {
-            return res.status(400).json({ success: false, message: 'Google credential is required' });
-        }
-
-        // Verify the ID Token from Google
-        const ticket = await client.verifyIdToken({
-            idToken: credential,
-            audience: process.env.GOOGLE_CLIENT_ID
+        res.status(200).json({
+            success: true,
+            message: 'Two-Factor Authentication disabled successfully.'
         });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
 
-        const payload = ticket.getPayload();
-        const { sub: googleId, email, name } = payload;
+// Verify Login 2FA
+export const verifyLogin2FA = async (req, res) => {
+    try {
+        const { userId, code } = req.body;
 
-        if (!email) {
-            return res.status(400).json({ success: false, message: 'Email not provided by Google profile' });
+        if (!userId || !code) {
+            return res.status(400).json({ success: false, message: 'User ID and verification code are required' });
         }
 
-        // 1. Check if user already exists with googleId
-        let user = await User.findOne({ googleId });
-
-        if (!user) {
-            // 2. If not found, check if a user already exists with this email address
-            user = await User.findOne({ email });
-
-            if (user) {
-                // Link Google account to this existing account
-                user.googleId = googleId;
-                if (!user.isVerified) user.isVerified = true;
-                await user.save({ validateBeforeSave: false });
-            } else {
-                // 3. User does not exist, create a new customer account
-                // Generate a high-entropy random password to satisfy model constraints safely
-                const randomPassword = crypto.randomBytes(16).toString('hex');
-                
-                user = await User.create({
-                    name,
-                    email,
-                    password: randomPassword,
-                    confirmPassword: randomPassword,
-                    googleId,
-                    isVerified: true,
-                    role: 'customer',
-                    status: 'active'
-                });
-            }
+        const user = await User.findById(userId).select('+twoFactorSecret');
+        if (!user || !user.twoFactorEnabled) {
+            return res.status(400).json({ success: false, message: 'Invalid request or 2FA not active' });
         }
 
-        // Check if account is active
-        if (user.status && user.status.toLowerCase() !== 'active') {
-            return res.status(403).json({
-                success: false,
-                message: 'Your account has been deactivated. Please contact support.'
-            });
+        const isValid = verifyTOTP(user.twoFactorSecret, code);
+        if (!isValid) {
+            return res.status(400).json({ success: false, message: 'Invalid verification code' });
         }
 
-        // Generate Access and Refresh JWT Tokens
         const accessToken = generateAccessToken(user._id, user.role);
         const refreshToken = generateRefreshToken(user._id, user.role);
 
         res.status(200).json({
             success: true,
-            message: 'Logged in with Google successfully!',
             data: {
                 _id: user._id,
                 name: user.name,
                 email: user.email,
-                phone: user.phone || '',
+                phone: user.phone,
                 role: user.role,
                 token: accessToken,
                 refreshToken
             }
         });
     } catch (error) {
-        console.error('Google Auth Error:', error);
-        res.status(400).json({ success: false, message: 'Google authentication failed: ' + error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 

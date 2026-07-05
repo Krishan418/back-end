@@ -25,7 +25,7 @@ async function check() {
   const bookings = await Booking.find().populate('room');
   console.log("\n--- BOOKINGS ---");
   bookings.forEach(b => {
-    console.log(`ID: ${b._id}, UserRef: ${b.user}, Name: ${b.fullName}, Email: ${b.email}, Room: ${b.room?.name}, Status: ${b.status}`);
+    console.log(`ID: ${b._id}, Name: ${b.fullName}, Check-In: ${b.checkInDate}, Check-Out: ${b.checkOutDate}, Room: ${b.room?.name}, Status: ${b.status}`);
   });
 
   await mongoose.disconnect();

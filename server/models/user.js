@@ -88,6 +88,10 @@ const userSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    bonus: {
+        type: Number,
+        default: 0
+    },
     joinDate: {
         type: Date
     },
@@ -117,6 +121,14 @@ const userSchema = new mongoose.Schema({
     pendingEmail: String,
     resetPasswordToken: String,
     resetPasswordExpire: Date,
+    twoFactorEnabled: {
+        type: Boolean,
+        default: false
+    },
+    twoFactorSecret: {
+        type: String,
+        select: false
+    },
     createdAt: {
         type: Date,
         default: Date.now

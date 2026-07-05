@@ -1,12 +1,13 @@
 import Booking from '../models/booking.js';
 import Room from '../models/room.js';
 import sendEmail from '../utils/email.js';
+import Settings from '../models/Settings.js';
 import {
 	CANCELLABLE_BY_USER,
 	isValidStatusTransition,
 	sanitizeDecorationItems,
 	calculateDecorationTotal
-} from './roombookinghekpers.js';
+} from './roombookinghelpers.js';
 
 const isAcRoom = (roomName, specialRequests) => {
   const norm = (roomName || '').toLowerCase().replace(/[^a-z]/g, '');
@@ -59,6 +60,13 @@ const getCalculatedStayMode = (stayMode, slots, checkInType, checkOutType) => {
 
 const sendBookingCancellationEmail = async (booking, actionLabel = 'cancelled') => {
 	if (!booking?.email) return;
+
+	// Load settings to check notification preferences
+	const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
+	if (settings.notifications?.newBookings === false) {
+		console.log('Skipping booking cancellation email due to settings.');
+		return;
+	}
 
 	const roomRecord = booking.room?.name ? booking.room : await Room.findById(booking.room).select('name');
 	const roomName = roomRecord?.name || 'your room booking';
@@ -295,26 +303,16 @@ export const updateBookingStatus = async (req, res) => {
 		try {
 			let subject, message, htmlContent;
 			if (status === 'confirmed') {
-				const bookingIdStr = updatedBooking._id ? String(updatedBooking._id).slice(-8).toUpperCase() : 'N/A';
-				const checkInStr = new Date(updatedBooking.checkInDate).toLocaleDateString();
-				const checkOutStr = new Date(updatedBooking.checkOutDate).toLocaleDateString();
-				
 				subject = 'Booking Confirmed - Hotel Janro';
-				message = `Booking Confirmed!\n\nDear ${updatedBooking.fullName},\n\nYour booking has been successfully confirmed.\n\nBooking ID: BK${bookingIdStr}\nRoom: ${updatedBooking.room?.name}\nCheck-in: ${checkInStr}\nCheck-out: ${checkOutStr}\nGuests: ${updatedBooking.guests}\nTotal Price: Rs. ${updatedBooking.totalPrice.toLocaleString()}\nPayment Status: Pending (Pay at Reception)\n\nWe look forward to hosting you.\n\nThank you,\nHotel Janro`;
-				
+				message = `Dear ${updatedBooking.fullName},\n\nYour booking has been officially confirmed!\n\nRoom: ${updatedBooking.room?.name}\nTotal Price: Rs. ${updatedBooking.totalPrice.toLocaleString()}\nWe look forward to hosting you.\n\nThank you, Hotel Janro`;
 				htmlContent = `
 					<h2>Booking Confirmed!</h2>
 					<p>Dear ${updatedBooking.fullName},</p>
-					<p>Your booking has been successfully confirmed.</p>
-					<p>
-						<strong>Booking ID:</strong> BK${bookingIdStr}<br/>
-						<strong>Room:</strong> ${updatedBooking.room?.name}<br/>
-						<strong>Check-in:</strong> ${checkInStr}<br/>
-						<strong>Check-out:</strong> ${checkOutStr}<br/>
-						<strong>Guests:</strong> ${updatedBooking.guests}<br/>
-						<strong>Total Price:</strong> Rs. ${updatedBooking.totalPrice.toLocaleString()}<br/>
-						<strong>Payment Status:</strong> Pending (Pay at Reception)
-					</p>
+					<p>Your booking has been officially <strong>confirmed</strong>!</p>
+					<ul>
+						<li><strong>Room:</strong> ${updatedBooking.room?.name}</li>
+						<li><strong>Total Price:</strong> Rs. ${updatedBooking.totalPrice.toLocaleString()}</li>
+					</ul>
 					<p>We look forward to hosting you.</p>
 					<p>Thank you,<br/>Hotel Janro</p>
 				`;
@@ -331,12 +329,17 @@ export const updateBookingStatus = async (req, res) => {
 			}
 
 			if (subject && message && htmlContent) {
-				await sendEmail({
-					email: updatedBooking.email,
-					subject,
-					message,
-					html: htmlContent
-				});
+				const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
+				if (settings.notifications?.newBookings !== false) {
+					await sendEmail({
+						email: updatedBooking.email,
+						subject,
+						message,
+						html: htmlContent
+					});
+				} else {
+					console.log('Skipping booking status update email due to settings.');
+				}
 			}
 		} catch (error) {
 			console.error('Failed to send status update email', error);

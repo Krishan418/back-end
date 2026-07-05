@@ -9,7 +9,7 @@ const settingsSchema = new mongoose.Schema({
   email: {
     type: String,
     required: true,
-    default: 'info@hoteljanro.com'
+    default: 'hoteljanro@gmail.com'
   },
   address: {
     type: String,
@@ -40,7 +40,31 @@ const settingsSchema = new mongoose.Schema({
   dateFormat: {
     type: String,
     default: 'DD/MM/YYYY'
-  }
+  },
+  notifications: {
+    newBookings: { type: Boolean, default: true },
+    paymentReceived: { type: Boolean, default: true },
+    lowInventory: { type: Boolean, default: true },
+    staffUpdates: { type: Boolean, default: true }
+  },
+  bankAccounts: [{
+    accountHolderName: { type: String, required: true },
+    bankName: { type: String, required: true },
+    branchName: { type: String, required: true },
+    accountNumber: { type: String, required: true }
+  }],
+  bankDetails: {
+    bankName: { type: String, default: '' },
+    branchName: { type: String, default: '' },
+    accountNumber: { type: String, default: '' },
+    accountHolderName: { type: String, default: '' }
+  },
+  cards: [{
+    cardHolderName: { type: String, required: true },
+    cardNumber: { type: String, required: true },
+    expiryDate: { type: String, required: true },
+    cardType: { type: String, default: 'Visa' }
+  }]
 }, { timestamps: true });
 
 const Settings = mongoose.model('Settings', settingsSchema);

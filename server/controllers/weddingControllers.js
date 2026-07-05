@@ -1,6 +1,7 @@
 import WeddingHall from '../models/weddingHall.js';
 import WeddingBooking from '../models/weddingBooking.js';
 import sendEmail from '../utils/email.js';
+import Payment from '../models/payment.js';
 
 // Create a new booking
 export const createBooking = async (req, res) => {
@@ -31,6 +32,14 @@ export const createBooking = async (req, res) => {
         const requestedDate = new Date(eventDate);
         if (Number.isNaN(requestedDate.getTime())) {
             return res.status(400).json({ success: false, message: 'Invalid eventDate format. Use YYYY-MM-DD' });
+        }
+
+        // Reject past dates
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        requestedDate.setHours(0, 0, 0, 0);
+        if (requestedDate < today) {
+            return res.status(400).json({ success: false, message: 'Event date cannot be in the past. Please choose a future date.' });
         }
 
         if (Number(guestCount) < 1) {
@@ -338,7 +347,7 @@ export const updateBookingStatus = async (req, res) => {
 export const addPayment = async (req, res) => {
     try {
         const { id } = req.params;
-        const { paymentAmount } = req.body;
+        const { paymentAmount, method } = req.body;
 
         if (!paymentAmount || Number(paymentAmount) <= 0) {
             return res.status(400).json({ success: false, message: 'Valid payment amount is required' });
@@ -346,6 +355,13 @@ export const addPayment = async (req, res) => {
 
         const booking = await WeddingBooking.findById(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+        // Authorization: Admin, Receptionist, or Owner
+        const isStaff = ['admin', 'receptionist', 'reception'].includes(req.user?.role);
+        const isOwner = booking.userId && booking.userId.toString() === req.user?._id?.toString();
+        if (!isStaff && !isOwner) {
+            return res.status(403).json({ success: false, message: 'Not authorized to add payment to this booking' });
+        }
 
         booking.advancePaid += Number(paymentAmount);
 
@@ -359,6 +375,21 @@ export const addPayment = async (req, res) => {
         }
 
         await booking.save();
+
+        // Log payment
+        try {
+            await Payment.create({
+                amount: Number(paymentAmount),
+                method: method || 'Online',
+                status: 'Completed',
+                user: booking.userId || "000000000000000000000000",
+                referenceId: booking._id,
+                onModel: 'WeddingBooking'
+            });
+        } catch (err) {
+            console.error("Failed to create Payment record:", err);
+        }
+
         return res.status(200).json({ success: true, message: 'Payment added successfully', data: booking });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
@@ -479,7 +510,7 @@ export const createHall = async (req, res) => {
 export const updateHall = async (req, res) => {
     try {
         const { hallName, capacity, price, type, status, image, location } = req.body;
-        const hall = await WeddingHall.findByIdAndUpdate(req.params.id, { hallName, capacity, price, type, status, image, location }, { new: true, runValidators: true });
+        const hall = await WeddingHall.findByIdAndUpdate(req.params.id, { hallName, capacity, price, type, status, image, location }, { returnDocument: 'after', runValidators: true });
         if (!hall) return res.status(404).json({ success: false, message: 'Venue not found' });
         res.status(200).json({ success: true, message: 'Venue updated', data: hall });
     } catch (error) {
@@ -514,7 +545,7 @@ export const toggleHallStatus = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid status' });
         }
 
-        const hall = await WeddingHall.findByIdAndUpdate(req.params.id, { status }, { new: true, runValidators: true });
+        const hall = await WeddingHall.findByIdAndUpdate(req.params.id, { status }, { returnDocument: 'after', runValidators: true });
         if (!hall) return res.status(404).json({ success: false, message: 'Venue not found' });
 
         res.status(200).json({ success: true, message: `Status updated to ${status}`, data: hall });

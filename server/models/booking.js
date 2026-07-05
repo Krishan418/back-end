@@ -7,6 +7,10 @@ const bookingSchema = new mongoose.Schema(
 			ref: 'Room',
 			required: [true, 'Room is required']
 		},
+		roomNumber: {
+			type: String,
+			required: [true, 'Room number is required']
+		},
 		user: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: 'User',
@@ -56,6 +60,16 @@ const bookingSchema = new mongoose.Schema(
 			type: String,
 			enum: ['pending', 'confirmed', 'checked-in', 'checked-out', 'cancelled'],
 			default: 'pending'
+		},
+		paymentStatus: {
+			type: String,
+			enum: ['Pending', 'Paid', 'Cancelled'],
+			default: 'Pending'
+		},
+		paymentMethod: {
+			type: String,
+			enum: ['Cash', 'Card', 'Online'],
+			default: 'Cash'
 		},
 		specialRequests: {
 			type: String,

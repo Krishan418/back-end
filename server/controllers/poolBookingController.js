@@ -68,6 +68,14 @@ export const createPoolBooking = async (req, res) => {
             });
         }
 
+        // Validate phone format
+        if (guestPhone && !/^(?:\+94|0)?7[0-9]{8}$/.test(guestPhone)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please provide a valid Sri Lankan phone number (e.g., 0771234567 or +94771234567).'
+            });
+        }
+
         // Disallow booking dates in the past (compare dates at midnight)
         const bookingDate = new Date(date);
         bookingDate.setHours(0, 0, 0, 0);
@@ -181,6 +189,15 @@ export const updatePoolBooking = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Booking ID is required' });
         }
 
+        if (guestPhone !== undefined) {
+            if (!/^(?:\+94|0)?7[0-9]{8}$/.test(guestPhone)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Please provide a valid Sri Lankan phone number (e.g., 0771234567 or +94771234567).'
+                });
+            }
+        }
+
         const updateData = { guestName, guestEmail, guestPhone, roomNumber, timeSlot };
         
         if (numberOfGuests !== undefined) {
@@ -248,7 +265,7 @@ export const updatePoolBooking = async (req, res) => {
         const finalPrice = updateData.pricePerPerson ?? bookingToUpdate.pricePerPerson;
         updateData.totalAmount = Number((finalPrice * finalGuests).toFixed(2));
 
-        const updatedBooking = await PoolBooking.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
+        const updatedBooking = await PoolBooking.findByIdAndUpdate(id, updateData, { returnDocument: 'after', runValidators: true });
         
         return res.status(200).json({
             success: true,

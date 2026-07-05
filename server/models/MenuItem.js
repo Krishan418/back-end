@@ -26,8 +26,8 @@ const menuItemSchema = new mongoose.Schema(
     },
     portions: [
       {
-        portionType: { type: String, enum: ["Full", "Half"] },
-        price: { type: Number, min: 0 }
+        portionType: { type: String, required: true },
+        price: { type: Number, min: 0, required: true }
       }
     ],
     isAvailable: { 
