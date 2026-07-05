@@ -5,6 +5,7 @@ import {
   getOrdersSummary,
   updateOrderStatus,
   deleteOrder,
+  abandonOrder,
   getOrderTrends,
 } from "../controllers/orderController.js";
 import { protect, authorize } from "../middleware/authMiddleware.js";
@@ -24,6 +25,7 @@ router.get("/", protect, getOrders);
 router.get("/summary", protect, authorize("admin", "manager", "cashier"), getOrdersSummary);
 router.get("/trends", protect, authorize("admin", "manager"), getOrderTrends);
 router.put("/:id", protect, authorize("admin", "manager", "cashier", "customer"), updateOrderStatus);
+router.delete("/:id/abandon", abandonOrder); // No auth needed, relies on unguessable ID + exact state
 router.delete("/:id", protect, authorize("admin"), deleteOrder);
 
 export default router;

@@ -158,19 +158,21 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
 
     // Restrict status updates for customers
     if (req.body.orderStatus && req.body.orderStatus !== order.orderStatus) {
-      if (req.body.orderStatus !== 'Cancelled') {
+      if (req.body.orderStatus === 'Cancelled') {
+        if (order.orderStatus !== 'Pending') {
+          res.status(400);
+          throw new Error("Only pending orders can be cancelled.");
+        }
+        const diffInMinutes = (Date.now() - new Date(order.createdAt).getTime()) / (1000 * 60);
+        if (diffInMinutes > 5) {
+          res.status(400);
+          throw new Error("Orders cannot be cancelled after 5 minutes.");
+        }
+      } else if (req.body.orderStatus === 'Completed' && req.body.paymentStatus === 'Paid') {
+        // Allowed from PayHere fallback
+      } else {
         res.status(403);
-        throw new Error("Customers can only cancel orders.");
-      }
-      if (order.orderStatus !== 'Pending') {
-        res.status(400);
-        throw new Error("Only pending orders can be cancelled.");
-      }
-      
-      const diffInMinutes = (Date.now() - new Date(order.createdAt).getTime()) / (1000 * 60);
-      if (diffInMinutes > 5) {
-        res.status(400);
-        throw new Error("Orders cannot be cancelled after 5 minutes.");
+        throw new Error("Customers can only cancel orders or finalize payments.");
       }
     }
   }
@@ -307,6 +309,25 @@ export const deleteOrder = asyncHandler(async (req, res) => {
   broadcastEvent("orderDeleted", { id: req.params.id });
 
   res.status(200).json({ message: "Order deleted successfully" });
+});
+
+// Abandon order (for failed/dismissed checkouts)
+export const abandonOrder = asyncHandler(async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) {
+    res.status(404);
+    throw new Error("Order not found");
+  }
+
+  if (order.orderStatus !== 'Pending' || order.paymentStatus !== 'Unpaid') {
+    res.status(400);
+    throw new Error("Only pending unpaid orders can be abandoned");
+  }
+
+  await Order.findByIdAndDelete(req.params.id);
+  broadcastEvent("orderDeleted", { id: req.params.id });
+
+  res.status(200).json({ message: "Order abandoned successfully" });
 });
 
 // Get item popularity trends

@@ -95,6 +95,7 @@ export const createBooking = async (req, res) => {
 		// New booking create.
 		const {
 			roomId,
+			roomNumber,
 			checkInDate,
 			checkOutDate,
 			guests,
@@ -109,7 +110,7 @@ export const createBooking = async (req, res) => {
 		} = req.body;
 
 		//Required Fields Validation
-		if (!roomId || !checkInDate || !checkOutDate || !guests || !fullName || !email) {
+		if (!roomId || !roomNumber || !checkInDate || !checkOutDate || !guests || !fullName || !email) {
 			return res.status(400).json({
 				success: false,
 				message: 'Missing required booking fields'
@@ -209,6 +210,7 @@ export const createBooking = async (req, res) => {
 		//Save in the booking database.
 		const booking = await Booking.create({
 			room: room._id,
+			roomNumber,
 			user: req.user?._id || null,
 			fullName,
 			email: normalizedEmail,
@@ -367,7 +369,10 @@ export const cancelMyBooking = async (req, res) => {
 			});
 		}
 
-		if (!booking.user || booking.user.toString() !== req.user._id.toString()) {
+		const isOwnerById = booking.user && booking.user.toString() === req.user._id.toString();
+		const isOwnerByEmail = booking.email && req.user.email && booking.email.toLowerCase() === req.user.email.toLowerCase();
+		
+		if (!isOwnerById && !isOwnerByEmail) {
 			return res.status(403).json({
 				success: false,
 				message: 'Not authorized to cancel this booking'
@@ -448,6 +453,38 @@ export const deleteBooking = async (req, res) => {
 			success: false,
 			message: error.message
 		});
+	}
+};
+
+export const abandonMyBooking = async (req, res) => {
+	try {
+		const booking = await Booking.findById(req.params.id);
+		if (!booking) {
+			return res.status(404).json({ success: false, message: 'Booking not found' });
+		}
+
+		const isOwnerById = booking.user && booking.user.toString() === req.user._id.toString();
+		const isOwnerByEmail = booking.email && req.user.email && booking.email.toLowerCase() === req.user.email.toLowerCase();
+		
+		if (!isOwnerById && !isOwnerByEmail) {
+			return res.status(403).json({ success: false, message: 'Not authorized' });
+		}
+
+		if (booking.status !== 'pending') {
+			return res.status(400).json({ success: false, message: 'Cannot abandon this booking' });
+		}
+
+		const room = await Room.findById(booking.room);
+		if (room) {
+			room.availableRooms += 1;
+			await room.save();
+		}
+
+		await Booking.findByIdAndDelete(req.params.id);
+
+		res.status(200).json({ success: true, message: 'Booking abandoned successfully' });
+	} catch (error) {
+		res.status(500).json({ success: false, message: error.message });
 	}
 };
 
