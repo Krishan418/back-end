@@ -1,6 +1,7 @@
 import Order from "../models/order.js";
 import MenuItem from "../models/MenuItem.js";
 import Inventory from "../models/inventory.js";
+import Payment from "../models/payment.js";
 import { broadcastEvent } from "../utils/socket.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 
@@ -141,7 +142,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       throw new Error("You can only edit your own orders");
     }
 
-    // Check the 5-minute limit (only for items update, not for status updates by staff)
+    // Check the 5-minute limit (only for items update)
     if (req.body.items) {
       const diffInMinutes = (Date.now() - new Date(order.createdAt).getTime()) / (1000 * 60);
       if (diffInMinutes > 5) {
@@ -153,43 +154,70 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
         res.status(400);
         throw new Error("Only pending orders can be edited");
       }
+    }
 
-      // Recalculate totals if items are changed
-      let subtotal = 0;
-      const validatedItems = [];
-
-      for (const item of req.body.items) {
-        const realMenuItem = await MenuItem.findById(item.menuItemId);
-        if (!realMenuItem) {
-          res.status(404);
-          throw new Error(`Menu item not found: ${item.menuItemId}`);
+    // Restrict status updates for customers
+    if (req.body.orderStatus && req.body.orderStatus !== order.orderStatus) {
+      if (req.body.orderStatus === 'Cancelled') {
+        if (order.orderStatus !== 'Pending') {
+          res.status(400);
+          throw new Error("Only pending orders can be cancelled.");
         }
-
-        let itemPrice = realMenuItem.price;
-        if (realMenuItem.hasPortions && item.portion) {
-          const selectedPortion = realMenuItem.portions.find(p => p.portionType === item.portion);
-          if (selectedPortion) itemPrice = selectedPortion.price;
+        const diffInMinutes = (Date.now() - new Date(order.createdAt).getTime()) / (1000 * 60);
+        if (diffInMinutes > 5) {
+          res.status(400);
+          throw new Error("Orders cannot be cancelled after 5 minutes.");
         }
+      } else if (req.body.orderStatus === 'Completed' && req.body.paymentStatus === 'Paid') {
+        // Allowed from PayHere fallback
+      } else {
+        res.status(403);
+        throw new Error("Customers can only cancel orders or finalize payments.");
+      }
+    }
+  }
 
-        subtotal += itemPrice * item.quantity;
-        validatedItems.push({
-          menuItemId: realMenuItem._id,
-          name: realMenuItem.name,
-          portion: item.portion || "",
-          price: itemPrice,
-          quantity: item.quantity,
-        });
+  // Recalculate totals if items are changed (for BOTH staff and customers)
+  if (req.body.items) {
+    let subtotal = 0;
+    const validatedItems = [];
+
+    for (const item of req.body.items) {
+      const realMenuItem = await MenuItem.findById(item.menuItemId);
+      if (!realMenuItem) {
+        res.status(404);
+        throw new Error(`Menu item not found: ${item.menuItemId}`);
       }
 
-      req.body.items = validatedItems;
-      req.body.subtotal = subtotal;
-      
-      // Recalculate totalAmount based on existing charges
-      const serviceCharge = order.serviceCharge || 0;
-      const deliveryFee = order.deliveryFee || 0;
-      const discount = order.discount || 0;
-      req.body.totalAmount = Number((subtotal + serviceCharge + deliveryFee - discount).toFixed(2));
+      let itemPrice = realMenuItem.price;
+      if (realMenuItem.hasPortions && item.portion) {
+        const selectedPortion = realMenuItem.portions.find(p => p.portionType === item.portion);
+        if (selectedPortion) itemPrice = selectedPortion.price;
+      }
+
+      subtotal += itemPrice * item.quantity;
+      validatedItems.push({
+        menuItemId: realMenuItem._id,
+        name: realMenuItem.name,
+        portion: item.portion || "",
+        price: itemPrice,
+        quantity: item.quantity,
+      });
     }
+
+    req.body.items = validatedItems;
+    req.body.subtotal = subtotal;
+    
+    // Recalculate totalAmount based on existing charges
+    let serviceCharge = order.serviceCharge || 0;
+    if (order.orderType === 'Dine-in' || order.orderType === 'Room') {
+      serviceCharge = subtotal * 0.1;
+    }
+    req.body.serviceCharge = serviceCharge;
+    
+    const deliveryFee = order.deliveryFee || 0;
+    const discount = order.discount || 0;
+    req.body.totalAmount = Number((subtotal + serviceCharge + deliveryFee - discount).toFixed(2));
   }
 
   let updateData = { ...req.body };
@@ -242,8 +270,28 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   const updatedOrder = await Order.findByIdAndUpdate(
     req.params.id,
     updateData,
-    { returnDocument: 'after', runValidators: true }
+    { new: true, runValidators: true }
   );
+
+  // If local fallback just set it to Paid, create Payment log if it didn't exist
+  if (updateData.$set && updateData.$set.paymentStatus === 'Paid' && order.paymentStatus !== 'Paid') {
+    try {
+      // Check if one already exists to avoid duplicates (e.g. if webhook fired)
+      const existingPayment = await Payment.findOne({ referenceId: updatedOrder._id, status: 'Completed' });
+      if (!existingPayment) {
+        await Payment.create({
+          amount: updatedOrder.totalAmount,
+          method: updatedOrder.paymentMethod || 'Online',
+          status: 'Completed',
+          user: updatedOrder.customerUser || "000000000000000000000000",
+          referenceId: updatedOrder._id,
+          onModel: "Order"
+        });
+      }
+    } catch (err) {
+      console.error("Failed to create Payment log:", err);
+    }
+  }
 
   broadcastEvent("orderUpdated", updatedOrder);
 
@@ -261,6 +309,25 @@ export const deleteOrder = asyncHandler(async (req, res) => {
   broadcastEvent("orderDeleted", { id: req.params.id });
 
   res.status(200).json({ message: "Order deleted successfully" });
+});
+
+// Abandon order (for failed/dismissed checkouts)
+export const abandonOrder = asyncHandler(async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) {
+    res.status(404);
+    throw new Error("Order not found");
+  }
+
+  if (order.orderStatus !== 'Pending' || order.paymentStatus !== 'Unpaid') {
+    res.status(400);
+    throw new Error("Only pending unpaid orders can be abandoned");
+  }
+
+  await Order.findByIdAndDelete(req.params.id);
+  broadcastEvent("orderDeleted", { id: req.params.id });
+
+  res.status(200).json({ message: "Order abandoned successfully" });
 });
 
 // Get item popularity trends

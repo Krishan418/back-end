@@ -1,6 +1,81 @@
 import Room from '../models/room.js';
 import Booking from '../models/booking.js';
 
+// Helper to deterministically assign room numbers globally, maintaining base allocations
+// even when rooms are spread across multiple DB objects (e.g. legacy Standard Room + newly created variants)
+const generateGlobalRoomNumbers = (allRooms) => {
+	const tracker = {
+		'non-ac standard room': { start: 1, max: 4, used: 0 },
+		'ac standard room': { start: 5, max: 2, used: 0 },
+		'family': { start: 7, max: 2, used: 0 },
+		'wedding': { start: 9, max: 2, used: 0 },
+	};
+	let nextGlobalNumber = 11;
+	const roomNumbersMap = {};
+
+	const sortedRooms = [...allRooms].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+	for (const r of sortedRooms) {
+		const lowerName = (r.name || '').toLowerCase().trim();
+		const fallbackTotal = lowerName.includes('standard room') ? 6 : 2;
+		let totalRoomsCount = r.totalRooms !== undefined ? r.totalRooms : fallbackTotal;
+		// For legacy "Standard Room" (not specific AC/Non-AC variant), always ensure 6 rooms
+		if (lowerName === 'standard room') {
+			totalRoomsCount = Math.max(totalRoomsCount, 6);
+		}
+		
+		let nums = [];
+		for (let i = 0; i < totalRoomsCount; i++) {
+			if (lowerName.includes('standard room')) {
+				if (lowerName === 'ac standard room') {
+					if (tracker['ac standard room'].used < tracker['ac standard room'].max) {
+						nums.push(`Room ${tracker['ac standard room'].start + tracker['ac standard room'].used}`);
+						tracker['ac standard room'].used++;
+					} else {
+						nums.push(`Room ${nextGlobalNumber++}`);
+					}
+				} else if (lowerName === 'non-ac standard room') {
+					if (tracker['non-ac standard room'].used < tracker['non-ac standard room'].max) {
+						nums.push(`Room ${tracker['non-ac standard room'].start + tracker['non-ac standard room'].used}`);
+						tracker['non-ac standard room'].used++;
+					} else {
+						nums.push(`Room ${nextGlobalNumber++}`);
+					}
+				} else {
+					// legacy 'standard room' - fill non-ac first, then ac, then global
+					if (tracker['non-ac standard room'].used < tracker['non-ac standard room'].max) {
+						nums.push(`Room ${tracker['non-ac standard room'].start + tracker['non-ac standard room'].used}`);
+						tracker['non-ac standard room'].used++;
+					} else if (tracker['ac standard room'].used < tracker['ac standard room'].max) {
+						nums.push(`Room ${tracker['ac standard room'].start + tracker['ac standard room'].used}`);
+						tracker['ac standard room'].used++;
+					} else {
+						nums.push(`Room ${nextGlobalNumber++}`);
+					}
+				}
+			} else if (lowerName.includes('family')) {
+				if (tracker['family'].used < tracker['family'].max) {
+					nums.push(`Room ${tracker['family'].start + tracker['family'].used}`);
+					tracker['family'].used++;
+				} else {
+					nums.push(`Room ${nextGlobalNumber++}`);
+				}
+			} else if (lowerName.includes('wedding') || lowerName.includes('honeymoon')) {
+				if (tracker['wedding'].used < tracker['wedding'].max) {
+					nums.push(`Room ${tracker['wedding'].start + tracker['wedding'].used}`);
+					tracker['wedding'].used++;
+				} else {
+					nums.push(`Room ${nextGlobalNumber++}`);
+				}
+			} else {
+				nums.push(`Room ${nextGlobalNumber++}`);
+			}
+		}
+		roomNumbersMap[r._id.toString()] = nums;
+	}
+	return roomNumbersMap;
+};
+
 export const getAvailableRoomNumbers = async (req, res) => {
 	try {
 		const { id } = req.params;
@@ -35,32 +110,41 @@ export const getAvailableRoomNumbers = async (req, res) => {
 
 		const bookedRoomNumbers = overlappingBookings.map(b => b.roomNumber);
 
-		const ROOM_START_NUMBERS = {
-			'ac standard room': 1,
-			'non-ac standard room': 4,
-			'standard room': 1,
-			'family room': 7,
-			'family suite': 7,
-			'wedding couple suite': 9,
-			'honeymoon suite': 9,
-		};
-		const lower = (room.name || '').toLowerCase();
-		const key = Object.keys(ROOM_START_NUMBERS).find(k => lower.includes(k) || k.includes(lower));
-		const startNumber = key ? ROOM_START_NUMBERS[key] : 1;
+		// Fetch all active rooms to determine global numbering deterministically
+		const allRooms = await Room.find({ isActive: { $ne: false } }).sort({ name: 1 });
+		const roomNumbersMap = generateGlobalRoomNumbers(allRooms);
+
+		const lower = (room.name || '').toLowerCase().trim();
+		const isStandardVariant = lower.includes('standard room');
 
 		let allRoomNumbers = [];
-		const fallbackTotal = lower.includes('standard room') ? 6 : 2;
-		const totalRoomsCount = room.totalRooms || fallbackTotal;
-		for (let i = 0; i < totalRoomsCount; i++) {
-			allRoomNumbers.push(`Room ${startNumber + i}`);
-		}
 
-		if (lower.includes('standard room') && variant) {
+		if (isStandardVariant) {
+			// Aggregate room numbers from ALL standard room DB documents
+			// to handle cases where the admin created multiple records (e.g. AC, Non-AC, and Legacy)
+			allRooms.forEach(r => {
+				const rLower = (r.name || '').toLowerCase().trim();
+				if (rLower.includes('standard room')) {
+					const nums = roomNumbersMap[r._id.toString()] || [];
+					allRoomNumbers.push(...nums);
+				}
+			});
+
+			// Standardize the variant string requested by frontend (e.g., frontend passes 'ac' or 'nonAc')
+			// If the user explicitly requested the 'ac' or 'nonAc' endpoint via query param, filter by that.
 			if (variant === 'ac') {
-				allRoomNumbers = allRoomNumbers.filter(num => ['Room 5', 'Room 6'].includes(num));
+				allRoomNumbers = allRoomNumbers.filter(num => parseInt(num.replace('Room ', '')) >= 5);
 			} else if (variant === 'nonAc') {
-				allRoomNumbers = allRoomNumbers.filter(num => ['Room 1', 'Room 2', 'Room 3', 'Room 4'].includes(num));
+				allRoomNumbers = allRoomNumbers.filter(num => parseInt(num.replace('Room ', '')) <= 4);
+			} else if (lower === 'ac standard room') {
+				// Fallback if variant isn't provided but the specific room was queried
+				allRoomNumbers = allRoomNumbers.filter(num => parseInt(num.replace('Room ', '')) >= 5);
+			} else if (lower === 'non-ac standard room') {
+				allRoomNumbers = allRoomNumbers.filter(num => parseInt(num.replace('Room ', '')) <= 4);
 			}
+		} else {
+			// Normal room logic (Honeymoon suite, etc.)
+			allRoomNumbers = roomNumbersMap[room._id.toString()] || [];
 		}
 
 		const availableRoomNumbers = allRoomNumbers.filter(num => !bookedRoomNumbers.includes(num));
@@ -106,14 +190,24 @@ export const getAdminRooms = async (req, res) => {
 			Room.countDocuments(filters)//Calculate the total room count.
 		]);
 
+		// Fetch all active rooms to calculate global numbers correctly (even if paginated)
+		const allRooms = await Room.find({ isActive: { $ne: false } }).sort({ name: 1 });
+		const roomNumbersMap = generateGlobalRoomNumbers(allRooms);
+
+		const formattedRooms = rooms.map(room => {
+			const roomObj = room.toObject();
+			roomObj.allRoomNumbers = roomNumbersMap[room._id.toString()] || [];
+			return roomObj;
+		});
+
 			//sends a successful response to the frontend
 		res.status(200).json({
 			success: true,
-			count: rooms.length,
+			count: formattedRooms.length,
 			total,
 			page: parsedPage,
 			pages: Math.ceil(total / parsedLimit),
-			data: rooms
+			data: formattedRooms
 		});
 	} catch (error) {
 		res.status(500).json({
@@ -205,25 +299,12 @@ export const getRooms = async (req, res) => {
 			endIndex: { $gte: startIndex }
 		});
 
-		const ROOM_START_NUMBERS = {
-			'ac standard room': 5,
-			'non-ac standard room': 1,
-			'standard room': 1,
-			'family room': 7,
-			'family suite': 7,
-			'wedding couple suite': 9,
-			'honeymoon suite': 9,
-		};
+		// Pre-calculate room numbers for all active rooms globally
+		const allRooms = await Room.find({ isActive: { $ne: false } }).sort({ name: 1 });
+		const roomNumbersMap = generateGlobalRoomNumbers(allRooms);
 
 		const formattedRooms = rooms.map(room => {
-			const lower = (room.name || '').toLowerCase();
-			const key = Object.keys(ROOM_START_NUMBERS).find(k => lower.includes(k) || k.includes(lower));
-			const startNumber = key ? ROOM_START_NUMBERS[key] : 1;
-
-			const allRoomNumbers = [];
-			for (let i = 0; i < room.totalRooms; i++) {
-				allRoomNumbers.push(`Room ${startNumber + i}`);
-			}
+			const allRoomNumbers = roomNumbersMap[room._id.toString()] || [];
 
 			const overlappingBookings = activeBookings.filter(b => b.room.toString() === room._id.toString());
 			const bookedRoomNumbers = overlappingBookings.map(b => b.roomNumber).filter(Boolean);
@@ -231,6 +312,7 @@ export const getRooms = async (req, res) => {
 
 			const roomObj = room.toObject();
 			roomObj.availableRooms = availableCount;
+			roomObj.allRoomNumbers = allRoomNumbers; // Expose the global room numbers list to the frontend
 			return roomObj;
 		});
 
