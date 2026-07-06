@@ -3,6 +3,7 @@ import GymAttendance from '../models/gymAttendance.js';
 import GymMember from '../models/gymMember.js';
 import sendEmail from '../utils/email.js';
 import Settings from '../models/Settings.js';
+import QRCode from 'qrcode';
 
 export const createGymPass = async (req, res) => {
   try {
@@ -74,6 +75,12 @@ export const createGymPass = async (req, res) => {
     if (guestEmail) {
       console.log("Attempting to send pass QR code email to:", guestEmail);
       try {
+        const qrCodeBuffer = await QRCode.toBuffer(qrCodeKey, {
+          errorCorrectionLevel: 'H',
+          margin: 1,
+          width: 250
+        });
+
         const settings = await Settings.findOne() || { hotelName: 'Hotel Janro' };
         const hotelName = settings.headerName || settings.hotelName || 'Hotel Janro';
 
@@ -120,7 +127,7 @@ export const createGymPass = async (req, res) => {
               <div style="text-align: center; margin: 32px 0;">
                 <p style="margin-bottom: 12px; font-weight: bold; color: #0F172A;">Your Gate Access QR Code</p>
                 <div style="display: inline-block; padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; margin-bottom: 12px;">
-                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${qrCodeKey}" alt="Gym Pass QR Code" style="display: block; width: 200px; height: 200px;" />
+                  <img src="cid:qrcode" alt="Gym Pass QR Code" style="display: block; width: 200px; height: 200px;" />
                 </div>
                 <p style="font-size: 13px; color: #64748b; margin-top: 8px;">
                   If the QR code image above does not load, please 
@@ -144,7 +151,14 @@ export const createGymPass = async (req, res) => {
             subject,
             message: textMessage,
             html,
-            hotelName
+            hotelName,
+            attachments: [
+              {
+                filename: 'qrcode.png',
+                content: qrCodeBuffer,
+                cid: 'qrcode'
+              }
+            ]
           });
           console.log("Pass QR code email sent successfully to:", guestEmail);
         } else {

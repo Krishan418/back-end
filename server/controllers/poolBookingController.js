@@ -38,6 +38,48 @@ const calculatePricePerPerson = (checkInTime, checkOutTime) => {
     }
 };
 
+const isSameDay = (d1, d2) => {
+    if (!d1 || !d2) return false;
+    const date1 = new Date(d1);
+    const date2 = new Date(d2);
+    if (isNaN(date1.getTime()) || isNaN(date2.getTime())) return false;
+    
+    return date1.toLocaleDateString('en-US', { timeZone: 'Asia/Colombo' }) ===
+           date2.toLocaleDateString('en-US', { timeZone: 'Asia/Colombo' });
+};
+
+const checkCapacityLimit = async (targetDate, targetTimeSlot, guests, excludeId = null) => {
+    const queryDate = new Date(targetDate);
+    const startDate = new Date(queryDate);
+    startDate.setDate(startDate.getDate() - 2);
+    const endDate = new Date(queryDate);
+    endDate.setDate(endDate.getDate() + 2);
+
+    const query = {
+        date: { $gte: startDate, $lte: endDate },
+        timeSlot: targetTimeSlot,
+        status: { $ne: 'Cancelled' }
+    };
+    
+    if (excludeId) {
+        query._id = { $ne: excludeId };
+    }
+
+    const bookings = await PoolBooking.find(query);
+    
+    // Filter in-memory to get exact matches for the same day
+    const sameDayBookings = bookings.filter(b => isSameDay(b.date, queryDate));
+    
+    const currentCount = sameDayBookings.reduce((sum, b) => sum + b.numberOfGuests, 0);
+    const maxCapacity = 20;
+    
+    return {
+        isOverLimit: currentCount + guests > maxCapacity,
+        currentCount,
+        maxCapacity
+    };
+};
+
 export const createPoolBooking = async (req, res) => {
     try {
         const {
@@ -93,6 +135,18 @@ export const createPoolBooking = async (req, res) => {
             });
         }
 
+        // Capacity check: max 20 guests per slot per day
+        const capacityCheck = await checkCapacityLimit(bookingDate, timeSlot, guests);
+        if (capacityCheck.isOverLimit) {
+            const spotsRemaining = Math.max(0, capacityCheck.maxCapacity - capacityCheck.currentCount);
+            return res.status(400).json({
+                success: false,
+                message: spotsRemaining === 0 
+                    ? 'This time slot is fully booked.' 
+                    : `This time slot is full. Only ${spotsRemaining} spots remaining.`
+            });
+        }
+
         // Calculate price per person based on duration
         // Validate times are in allowed window
         if (!isTimeInAllowedWindow(checkInTime) || !isTimeInAllowedWindow(checkOutTime)) {
@@ -121,7 +175,7 @@ export const createPoolBooking = async (req, res) => {
             guestEmail,
             guestPhone,
             roomNumber,
-            date,
+            date: bookingDate,
             timeSlot,
             checkInTime,
             checkOutTime,
@@ -189,6 +243,11 @@ export const updatePoolBooking = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Booking ID is required' });
         }
 
+        const existingBooking = await PoolBooking.findById(id);
+        if (!existingBooking) {
+            return res.status(404).json({ success: false, message: 'Booking not found' });
+        }
+
         if (guestPhone !== undefined) {
             if (!/^(?:\+94|0)?7[0-9]{8}$/.test(guestPhone)) {
                 return res.status(400).json({
@@ -198,8 +257,15 @@ export const updatePoolBooking = async (req, res) => {
             }
         }
 
-        const updateData = { guestName, guestEmail, guestPhone, roomNumber, timeSlot };
+        const updateData = { guestName, guestEmail, guestPhone, roomNumber };
+
+        const finalDate = date !== undefined ? new Date(date) : new Date(existingBooking.date);
+        finalDate.setHours(0, 0, 0, 0);
         
+        const finalTimeSlot = timeSlot !== undefined ? timeSlot : existingBooking.timeSlot;
+        const finalGuests = numberOfGuests !== undefined ? parseGuestCount(numberOfGuests) : existingBooking.numberOfGuests;
+        const finalStatus = status !== undefined ? status : existingBooking.status;
+
         if (numberOfGuests !== undefined) {
             const guests = parseGuestCount(numberOfGuests);
             if (!guests) return res.status(400).json({ success: false, message: 'numberOfGuests must be a positive number.' });
@@ -208,6 +274,10 @@ export const updatePoolBooking = async (req, res) => {
 
         if (status !== undefined) {
             updateData.status = allowedStatuses.has(status) ? status : 'Confirmed';
+        }
+
+        if (timeSlot !== undefined) {
+            updateData.timeSlot = timeSlot;
         }
 
         if (date !== undefined) {
@@ -219,17 +289,26 @@ export const updatePoolBooking = async (req, res) => {
             if (isNaN(bookingDate.getTime()) || bookingDate < today) {
                 return res.status(400).json({ success: false, message: 'Booking date cannot be in the past.' });
             }
-            updateData.date = date;
+            updateData.date = bookingDate;
+        }
+
+        // Capacity check: max 20 guests per slot per day
+        if (finalStatus !== 'Cancelled') {
+            const capacityCheck = await checkCapacityLimit(finalDate, finalTimeSlot, finalGuests, id);
+            if (capacityCheck.isOverLimit) {
+                const spotsRemaining = Math.max(0, capacityCheck.maxCapacity - capacityCheck.currentCount);
+                return res.status(400).json({
+                    success: false,
+                    message: spotsRemaining === 0 
+                        ? 'Cannot update booking. This time slot is fully booked.' 
+                        : `Cannot update booking. This slot only has ${spotsRemaining} spots remaining.`
+                });
+            }
         }
 
         if (checkInTime !== undefined || checkOutTime !== undefined) {
-            const bookingToCheck = await PoolBooking.findById(id);
-            if (!bookingToCheck) {
-                return res.status(404).json({ success: false, message: 'Booking not found' });
-            }
-
-            const finalCheckIn = checkInTime ?? bookingToCheck.checkInTime;
-            const finalCheckOut = checkOutTime ?? bookingToCheck.checkOutTime;
+            const finalCheckIn = checkInTime ?? existingBooking.checkInTime;
+            const finalCheckOut = checkOutTime ?? existingBooking.checkOutTime;
 
             // Validate allowed window
             if (!isTimeInAllowedWindow(finalCheckIn) || !isTimeInAllowedWindow(finalCheckOut)) {
@@ -255,14 +334,7 @@ export const updatePoolBooking = async (req, res) => {
             updateData.pricePerPerson = pricePerPerson;
         }
 
-        // Calculate totalAmount if guests or pricePerPerson are updated
-        const bookingToUpdate = await PoolBooking.findById(id);
-        if (!bookingToUpdate) {
-            return res.status(404).json({ success: false, message: 'Booking not found' });
-        }
-        
-        const finalGuests = updateData.numberOfGuests ?? bookingToUpdate.numberOfGuests;
-        const finalPrice = updateData.pricePerPerson ?? bookingToUpdate.pricePerPerson;
+        const finalPrice = updateData.pricePerPerson ?? existingBooking.pricePerPerson;
         updateData.totalAmount = Number((finalPrice * finalGuests).toFixed(2));
 
         const updatedBooking = await PoolBooking.findByIdAndUpdate(id, updateData, { returnDocument: 'after', runValidators: true });
