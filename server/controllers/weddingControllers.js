@@ -456,7 +456,7 @@ export const getAllBookings = async (req, res) => {
     try {
         const bookings = await WeddingBooking.find()
             .populate('hallId', 'hallName capacity price status')
-            .sort({ eventDate: 1 });
+            .sort({ createdAt: -1 });
 
         return res.status(200).json({ success: true, count: bookings.length, data: bookings });
     } catch (error) {
@@ -474,7 +474,8 @@ export const getMyBookings = async (req, res) => {
                 { customerEmail: normalizedEmail }
             ]
         })
-            .populate('hallId', 'hallName capacity price image');
+            .populate('hallId', 'hallName capacity price image')
+            .sort({ createdAt: -1 });
         res.status(200).json({ success: true, data: bookings });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
