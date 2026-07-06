@@ -1,4 +1,11 @@
 {
+  "scripts": {
+    "dev": "npm run dev --prefix server",
+    "start": "npm start --prefix server",
+    "seed:wedding-halls": "npm run seed:wedding-halls --prefix server",
+    "seed:menu": "npm run seed:menu --prefix server",
+    "seed:images": "npm run seed:images --prefix server"
+  },
   "dependencies": {
     "socket.io": "^4.8.3"
   }
