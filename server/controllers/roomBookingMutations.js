@@ -2,6 +2,8 @@ import Booking from '../models/booking.js';
 import Room from '../models/room.js';
 import sendEmail from '../utils/email.js';
 import Settings from '../models/Settings.js';
+import Payment from '../models/payment.js';
+import { broadcastEvent } from '../utils/socket.js';
 import {
 	CANCELLABLE_BY_USER,
 	isValidStatusTransition,
@@ -27,12 +29,18 @@ const getRoomOptionPrice = (roomName, isAc, stayMode) => {
 
   if (isFamily) {
     if (isAc) {
-      return stayMode === 'onlyNight' ? 6750 : 8750;
+      if (stayMode === 'onlyDay') return 6500;
+      if (stayMode === 'onlyNight') return 7000;
+      return 9000; // 24 hours
     } else {
-      return stayMode === 'onlyNight' ? 5500 : 6750;
+      if (stayMode === 'onlyDay') return 5500;
+      if (stayMode === 'onlyNight') return 6000;
+      return 7000; // 24 hours
     }
   } else if (isHoneymoon) {
-    return 9500;
+    if (stayMode === 'onlyDay') return 9500;
+    if (stayMode === 'onlyNight') return 14000;
+    return 17000;
   } else {
     // Standard Room
     if (isAc) {
@@ -229,6 +237,8 @@ export const createBooking = async (req, res) => {
 		});
 
 		const populatedBooking = await Booking.findById(booking._id).populate('room', 'name price image');
+		
+		broadcastEvent('bookingCreated', populatedBooking);
 
 		res.status(201).json({
 			success: true,
@@ -346,6 +356,8 @@ export const updateBookingStatus = async (req, res) => {
 		} catch (error) {
 			console.error('Failed to send status update email', error);
 		}
+
+		broadcastEvent('bookingUpdated', updatedBooking);
 
 		res.status(200).json({
 			success: true,
@@ -563,6 +575,69 @@ export const updateBookingDetails = async (req, res) => {
 			success: true,
 			message: 'Booking updated successfully',
 			data: updatedBooking
+		});
+	} catch (error) {
+		res.status(500).json({
+			success: false,
+			message: error.message
+		});
+	}
+};
+
+export const addBookingPayment = async (req, res) => {
+	try {
+		const { id } = req.params;
+		const { paymentMethod } = req.body;
+
+		const booking = await Booking.findById(id);
+		if (!booking) {
+			return res.status(404).json({
+				success: false,
+				message: 'Booking not found'
+			});
+		}
+
+		if (booking.paymentStatus === 'Paid') {
+			return res.status(400).json({
+				success: false,
+				message: 'Booking is already paid'
+			});
+		}
+
+		const method = paymentMethod || 'Cash';
+		if (!['Cash', 'Card', 'Online'].includes(method)) {
+			return res.status(400).json({
+				success: false,
+				message: 'Invalid payment method. Must be Cash, Card, or Online'
+			});
+		}
+
+		booking.paymentStatus = 'Paid';
+		booking.paymentMethod = method;
+		await booking.save();
+
+		// Log payment transaction
+		try {
+			await Payment.create({
+				amount: booking.totalPrice,
+				method: method,
+				status: 'Completed',
+				user: booking.user || '000000000000000000000000',
+				referenceId: booking._id,
+				onModel: 'Booking'
+			});
+		} catch (err) {
+			console.error('Failed to create Payment log for booking:', err);
+		}
+
+		const populatedBooking = await Booking.findById(booking._id).populate('room', 'name price image');
+		
+		broadcastEvent('bookingUpdated', populatedBooking);
+
+		res.status(200).json({
+			success: true,
+			message: 'Payment settled successfully',
+			data: populatedBooking
 		});
 	} catch (error) {
 		res.status(500).json({
