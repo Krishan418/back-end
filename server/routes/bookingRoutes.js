@@ -9,7 +9,8 @@ import {
     abandonMyBooking,
     getMonthlyRevenueReport,
     deleteBooking,
-    updateBookingDetails
+    updateBookingDetails,
+    addBookingPayment
 } from '../controllers/bookingController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
@@ -23,6 +24,7 @@ router.get('/reports/monthly-revenue', protect, authorize('admin', 'manager', 's
 router.patch('/:id/cancel', protect, cancelMyBooking);
 router.delete('/:id/abandon', protect, abandonMyBooking);
 router.put('/:id', protect, updateBookingDetails);
+router.post('/:id/payment', protect, authorize('admin', 'manager', 'staff', 'receptionist', 'reception'), addBookingPayment);
 
 router.get('/', protect, authorize('admin', 'manager', 'staff', 'receptionist', 'reception'), getBookings);
 router.get('/:id', protect, getBookingById);

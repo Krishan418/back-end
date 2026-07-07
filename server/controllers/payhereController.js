@@ -3,6 +3,7 @@ import Booking from "../models/booking.js";
 import WeddingBooking from "../models/weddingBooking.js";
 import Order from "../models/order.js";
 import Payment from "../models/payment.js";
+import { broadcastEvent } from "../utils/socket.js";
 
 // Helper to generate MD5 Hash
 const generateMD5 = (string) => {
@@ -101,6 +102,8 @@ export const handlePayHereNotification = async (req, res) => {
           await booking.save();
           userId = booking.user;
           onModelType = "Booking";
+          const populatedBooking = await Booking.findById(booking._id).populate('room', 'name price image');
+          broadcastEvent('bookingUpdated', populatedBooking);
         }
       } else if (type === "wedding") {
         // Update Wedding Booking
@@ -124,6 +127,7 @@ export const handlePayHereNotification = async (req, res) => {
           await order.save();
           userId = order.user;
           onModelType = "Order";
+          broadcastEvent('orderUpdated', order);
         }
       }
 
