@@ -68,11 +68,8 @@ export const createBooking = async (req, res) => {
             hallId,
             eventDate: { $gte: startOfDay, $lte: endOfDay },
             bookingStatus: { $in: ['pending', 'confirmed'] },
-            $or: [
-                { startTime: { $lte: startTime }, endTime: { $gte: startTime } },
-                { startTime: { $lte: endTime }, endTime: { $gte: endTime } },
-                { startTime: { $gte: startTime }, endTime: { $lte: endTime } }
-            ]
+            startTime: { $lt: endTime },
+            endTime: { $gt: startTime }
         });
 
         if (overlappingBooking) {
@@ -174,6 +171,44 @@ export const createBooking = async (req, res) => {
         });
 
         await booking.save();
+
+        if (bookingStatus === 'confirmed') {
+            try {
+                await booking.populate('hallId', 'hallName');
+                const bookingIdStr = booking._id ? String(booking._id).slice(-8).toUpperCase() : 'N/A';
+                const eventDateStr = new Date(booking.eventDate).toLocaleDateString();
+                const hallName = booking.hallId?.hallName || 'Event Venue';
+                
+                const subject = 'Booking Confirmed - Hotel Janro';
+                const message = `Booking Confirmed!\n\nDear ${booking.customerName},\n\nYour booking has been successfully confirmed.\n\nBooking ID: EV${bookingIdStr}\nEvent Venue: ${hallName}\nEvent Date: ${eventDateStr}\nTime: ${booking.startTime} - ${booking.endTime}\nGuests: ${booking.guestCount}\nTotal Price: Rs. ${booking.totalAmount.toLocaleString()}\nPayment Status: ${booking.paymentStatus}\n\nWe look forward to hosting you.\n\nThank you,\nHotel Janro`;
+                
+                const htmlContent = `
+					<h2>Booking Confirmed!</h2>
+					<p>Dear ${booking.customerName},</p>
+					<p>Your booking has been successfully confirmed.</p>
+					<p>
+						<strong>Booking ID:</strong> EV${bookingIdStr}<br/>
+						<strong>Event Venue:</strong> ${hallName}<br/>
+						<strong>Event Date:</strong> ${eventDateStr}<br/>
+						<strong>Time:</strong> ${booking.startTime} - ${booking.endTime}<br/>
+						<strong>Guests:</strong> ${booking.guestCount}<br/>
+						<strong>Total Price:</strong> Rs. ${booking.totalAmount.toLocaleString()}<br/>
+						<strong>Payment Status:</strong> ${booking.paymentStatus}
+					</p>
+					<p>We look forward to hosting you.</p>
+					<p>Thank you,<br/>Hotel Janro</p>
+				`;
+
+                await sendEmail({
+                    email: booking.customerEmail,
+                    subject,
+                    message,
+                    html: htmlContent
+                });
+            } catch (error) {
+                console.error('Failed to send wedding confirmation email on create', error);
+            }
+        }
 
         return res.status(201).json({ success: true, message: 'Booking request created successfully', data: booking });
     } catch (error) {
@@ -412,7 +447,7 @@ export const deleteBookingRequest = async (req, res) => {
 // Check hall availability by date
 export const getHallAvailability = async (req, res) => {
     try {
-        const { date } = req.query;
+        const { date, startTime, endTime } = req.query;
         if (!date) return res.status(400).json({ success: false, message: 'Please provide date (YYYY-MM-DD)' });
 
         const requestedDate = new Date(date);
@@ -425,10 +460,17 @@ export const getHallAvailability = async (req, res) => {
         const endOfDay = new Date(requestedDate);
         endOfDay.setHours(23, 59, 59, 999);
 
-        const blockingBookings = await WeddingBooking.find({
+        const query = {
             eventDate: { $gte: startOfDay, $lte: endOfDay },
             bookingStatus: { $in: ['pending', 'confirmed'] }
-        }).select('hallId');
+        };
+
+        if (startTime && endTime) {
+            query.startTime = { $lt: endTime };
+            query.endTime = { $gt: startTime };
+        }
+
+        const blockingBookings = await WeddingBooking.find(query).select('hallId');
 
         const bookedHallIdSet = new Set(blockingBookings.map(b => b.hallId.toString()));
         const halls = await WeddingHall.find();
